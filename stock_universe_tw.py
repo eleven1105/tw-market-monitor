@@ -1,70 +1,86 @@
 # -*- coding: utf-8 -*-
-"""Validated TWSE-listed common-stock universe.
+"""Validated TWSE-listed ordinary-share universe.
 
-Only the TWSE ISIN listed-stock classification is accepted. No OTC, ETF,
-warrant, depositary receipt, or market-code guessing fallback is used.
+The TWSE C_public.jsp?strMode=2 page is the official listed-securities
+classification table. We accept only rows whose CFI code is ESVUFR
+(ordinary shares); malformed or unexpectedly small responses fail closed.
 """
 from datetime import datetime
 from io import StringIO
 from pathlib import Path
+import re
 
 import pandas as pd
 import requests
 
-TWSE_LIST_URL = (
-    "https://isin.twse.com.tw/isin/class_main.jsp"
-    "?market=1&issuetype=1&Page=1&chklike=Y"
-)
-EXCLUDED_NAME_MARKERS = (
-    "特別股", "存託憑證", "受益證券", "指數股票型基金",
-    "交換交易基金", "認購權證", "認售權證", "認股權證",
-)
+TWSE_LIST_URL = "https://isin.twse.com.tw/isin/C_public.jsp?strMode=2"
+MIN_EXPECTED_STOCKS = 500
 
 
 def fetch_listed_common_stocks():
-    """Fetch and validate listed common stocks; fail closed on source issues."""
     response = requests.get(
         TWSE_LIST_URL,
         headers={"User-Agent": "Mozilla/5.0"},
         timeout=30,
     )
     response.raise_for_status()
-    tables = pd.read_html(StringIO(response.text))
+    response.encoding = "big5"
+    tables = pd.read_html(StringIO(response.text), header=None)
     if not tables:
-        raise ValueError("TWSE ISIN returned no tables")
+        raise ValueError("TWSE listed-securities page returned no tables")
 
-    frame = tables[0]
-    required = {"有價證券代號", "有價證券名稱", "市場別", "有價證券別", "CFICode"}
-    if not required.issubset(frame.columns):
-        missing = ", ".join(sorted(required - set(frame.columns)))
-        raise ValueError(f"TWSE ISIN schema changed; missing: {missing}")
+    # Locate the table/header by labels, rather than assuming the first table
+    # has a fixed shape. The first field combines ticker and Chinese name.
+    raw = max(tables, key=len).copy()
+    header_index = None
+    cfi_index = None
+    for idx, row in raw.iterrows():
+        values = [str(v).strip().lower() for v in row.tolist()]
+        cfi_matches = [i for i, value in enumerate(values) if "cficode" in value]
+        code_name_matches = [
+            i for i, value in enumerate(values)
+            if "有價證券代號及名稱" in value or "證券代號及名稱" in value
+        ]
+        if cfi_matches and code_name_matches:
+            header_index = idx
+            cfi_index = cfi_matches[0]
+            code_name_index = code_name_matches[0]
+            break
+    if header_index is None:
+        # Some TWSE responses have a title row and no explicit header row.
+        # The official C_public table's stable layout places the combined
+        # code/name in column 0 and CFI code in column 5.
+        code_name_index, cfi_index = 0, 5
+        if raw.shape[1] <= cfi_index:
+            raise ValueError(f"Unexpected TWSE table shape: {raw.shape}")
+        data = raw
+    else:
+        data = raw.iloc[header_index + 1:]
 
     records = []
-    for _, row in frame.iterrows():
-        code = str(row["有價證券代號"]).strip()
-        name = str(row["有價證券名稱"]).strip()
-        market = str(row["市場別"]).strip()
-        security_type = str(row["有價證券別"]).strip()
-        cfi_code = str(row["CFICode"]).strip().upper()
-        if not (code.isdigit() and len(code) == 4 and name and name != "nan"):
+    for _, row in data.iterrows():
+        if len(row) <= max(code_name_index, cfi_index):
             continue
-        # ESVUFR is the CFI classification for ordinary/common shares.
-        if market != "上市" or security_type != "股票" or cfi_code != "ESVUFR":
+        code_name = str(row.iloc[code_name_index]).strip()
+        cfi_code = str(row.iloc[cfi_index]).strip().upper()
+        if cfi_code != "ESVUFR":
             continue
-        if any(marker in name for marker in EXCLUDED_NAME_MARKERS):
+        match = re.match(r"^\s*(\d{4})\s+(.+?)\s*$", code_name)
+        if not match:
             continue
+        code, name = match.group(1), match.group(2)
         records.append({
             "ticker": f"{code}.TW",
             "code": code,
             "name": name,
-            "source": "TWSE_ISIN_market1_issuetype1",
+            "cfi_code": cfi_code,
+            "source": "TWSE_C_public_strMode_2",
         })
 
     result = pd.DataFrame(records).drop_duplicates(subset=["ticker"])
-    # A collapsed or malformed response must never be treated as a valid pool.
-    if len(result) < 500:
+    if len(result) < MIN_EXPECTED_STOCKS:
         raise ValueError(
-            f"TWSE listed-stock universe unexpectedly small: {len(result)}"
+            f"TWSE ordinary-share universe unexpectedly small: {len(result)}"
         )
     result = result.sort_values("code").reset_index(drop=True)
     result["retrieved_at"] = datetime.now().astimezone().isoformat()
