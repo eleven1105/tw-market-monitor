@@ -442,7 +442,7 @@ def run_global_analysis(market_id="tw-share"):
             low = prices["low"].to_numpy(dtype=float)
 
             row = {"Ticker": tkr, "Full_Name": nm}
-            periods = [("Week", 5), ("Month", 20), ("Year", 250)]
+            periods = [("Day", 1), ("Week", 5), ("Month", 20), ("Year", 250)]
             for p_name, days in periods:
                 if len(close) <= days:
                     continue
