@@ -123,7 +123,8 @@ def classify_market_data_status(official_bar, local_bar=None, official_source_st
     if official_source_status != 'ok':
         return {'classification': 'official_source_unavailable', 'reason': 'TWSE source status: ' + str(official_source_status)}
     local_complete = False
-    if local_bar is not None:
+    local_ohlc_present = local_bar is not None and any(k in local_bar for k in ('open', 'high', 'low', 'close'))
+    if local_ohlc_present:
         try:
             local_complete = all(local_bar.get(k) is not None and float(local_bar[k]) > 0 for k in ('open', 'high', 'low', 'close'))
         except (TypeError, ValueError):
@@ -138,7 +139,7 @@ def classify_market_data_status(official_bar, local_bar=None, official_source_st
         return {'classification': 'official_and_vendor_bar_present', 'reason': 'both exact-date bars exist; price reconciliation remains separate'}
     if exchange_suspended:
         return {'classification': 'confirmed_suspension', 'reason': 'suspension explicitly confirmed by an authoritative notice'}
-    if local_bar is not None and not local_complete:
+    if local_ohlc_present and not local_complete:
         return {'classification': 'local_bar_incomplete_official_absent', 'reason': 'local OHLC is incomplete and TWSE has no exact-date bar; exchange event or source cause remains unverified'}
     if exchange_open and local_bar is not None:
         try:
