@@ -6,6 +6,7 @@ on:
       - research/tw-listed-common-stocks
     paths:
       - 'candidate_chip_pipeline.py'
+      - 'historical_chip_coverage.py'
       - '.github/workflows/wave-candidate-live-validation.yml'
   workflow_dispatch:
 
@@ -53,6 +54,8 @@ jobs:
         env:
           FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
         run: python candidate_chip_pipeline.py
+      - name: Audit restored historical price and chip coverage
+        run: python historical_chip_coverage.py
       - name: Upload live candidate and chip audit
         if: always()
         uses: actions/upload-artifact@v4
@@ -62,4 +65,6 @@ jobs:
             output/wave_candidates.csv
             output/wave_candidate_chip_status.json
             output/wave_candidates_enriched.csv
+            output/historical_chip_coverage.csv
+            output/historical_chip_coverage_summary.json
           if-no-files-found: warn
