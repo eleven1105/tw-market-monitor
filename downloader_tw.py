@@ -35,6 +35,18 @@ def get_full_stock_list():
     return frame
 
 
+def _latest_csv_date(path):
+    """Return the latest actual market-data date stored in a CSV, never file mtime."""
+    try:
+        frame = pd.read_csv(path, usecols=lambda col: str(col).lower() in {"date", "datetime"})
+        if frame.empty or len(frame.columns) == 0:
+            return None
+        values = pd.to_datetime(frame.iloc[:, 0], errors="coerce").dropna()
+        return values.max().date() if not values.empty else None
+    except Exception:
+        return None
+
+
 def download_stock_data(row):
     ticker, name = row["ticker"], row["name"]
     safe_name = "".join(
@@ -43,12 +55,16 @@ def download_stock_data(row):
     output = DATA_DIR / f"{ticker}_{safe_name}.csv"
 
     try:
-        # A same-day cache is accepted; older cache files are never analysis inputs
-        # unless the ticker is explicitly written to today's analysis manifest.
-        if output.exists():
-            modified = datetime.fromtimestamp(output.stat().st_mtime).date()
-            if modified == datetime.now().date() and output.stat().st_size > 1000:
-                return {"status": "exists", "ticker": ticker, "name": name}
+        # Validate the actual last market-data date. GitHub cache restore can
+        # reset file mtimes, so mtime alone must never certify fresh price data.
+        if output.exists() and output.stat().st_size > 1000:
+            latest_date = _latest_csv_date(output)
+            age_days = (datetime.now().date() - latest_date).days if latest_date else 999
+            if latest_date and 0 <= age_days <= 5:
+                return {
+                    "status": "exists", "ticker": ticker, "name": name,
+                    "latest_data_date": latest_date.isoformat(),
+                }
 
         time.sleep(random.uniform(0.5, 1.2))
         ticker_obj = yf.Ticker(ticker)
@@ -62,7 +78,11 @@ def download_stock_data(row):
                     if not required.issubset(history.columns):
                         return {"status": "error", "ticker": ticker, "name": name}
                     history.to_csv(output, index=False, encoding="utf-8-sig")
-                    return {"status": "success", "ticker": ticker, "name": name}
+                    latest_date = pd.to_datetime(history["date"], errors="coerce").dropna().max()
+                    return {
+                        "status": "success", "ticker": ticker, "name": name,
+                        "latest_data_date": latest_date.date().isoformat(),
+                    }
                 if attempt == 1:
                     return {"status": "empty", "ticker": ticker, "name": name}
             except Exception:
@@ -97,9 +117,13 @@ def main():
             result = future.result()
             stats[result["status"]] += 1
             if result["status"] in ("success", "exists"):
+                latest_data_date = result.get("latest_data_date") or _latest_csv_date(
+                    DATA_DIR / f"{result['ticker']}_{''.join(c for c in str(result['name']) if c.isalnum() or c in (' ', '_', '-')).strip()}.csv"
+                )
                 valid_rows.append({
                     "ticker": result["ticker"],
                     "name": result["name"],
+                    "latest_data_date": latest_data_date.isoformat() if latest_data_date else "",
                 })
             progress.update(1)
         progress.close()
@@ -107,7 +131,7 @@ def main():
     # This manifest is the strict allow-list consumed by analyzer.py.
     if valid_rows:
         valid_frame = pd.DataFrame(valid_rows).drop_duplicates("ticker")
-        valid_frame["data_date"] = datetime.now().date().isoformat()
+        valid_frame["manifest_created_at"] = datetime.now().isoformat(timespec="seconds")
         save_universe(valid_frame, ANALYSIS_UNIVERSE_PATH)
 
     report = {
