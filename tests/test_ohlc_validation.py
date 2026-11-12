@@ -1,0 +1,48 @@
+import unittest
+
+import numpy as np
+import pandas as pd
+
+from analyzer import validate_recent_ohlc
+
+
+class ValidateRecentOhlcTests(unittest.TestCase):
+    def test_accepts_floating_point_rounding_noise(self):
+        prices = pd.DataFrame({
+            "close": [29.43267250061035],
+            "high": [30.57483524077293],
+            "low": [29.432672500610355],
+        })
+        self.assertEqual(validate_recent_ohlc(prices), (True, None))
+
+    def test_rejects_material_close_below_low(self):
+        prices = pd.DataFrame({
+            "close": [324.0],
+            "high": [368.0],
+            "low": [324.5],
+        })
+        valid, reason = validate_recent_ohlc(prices)
+        self.assertFalse(valid)
+        self.assertIn("inconsistent_high_low_close", reason)
+
+    def test_rejects_missing_recent_price(self):
+        prices = pd.DataFrame({
+            "close": [10.0, np.nan],
+            "high": [11.0, 12.0],
+            "low": [9.0, 10.0],
+        })
+        valid, reason = validate_recent_ohlc(prices)
+        self.assertFalse(valid)
+        self.assertEqual(reason, "non_numeric_or_missing")
+
+    def test_ignores_anomaly_outside_250_day_analysis_window(self):
+        prices = pd.DataFrame({
+            "close": [5.0] + [10.0] * 251,
+            "high": [4.0] + [11.0] * 251,
+            "low": [6.0] + [9.0] * 251,
+        })
+        self.assertEqual(validate_recent_ohlc(prices, lookback=251), (True, None))
+
+
+if __name__ == "__main__":
+    unittest.main()
