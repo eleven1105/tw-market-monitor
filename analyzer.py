@@ -115,6 +115,31 @@ def filter_manifest_to_latest_date(manifest):
     return fresh_manifest, latest_date, lagging, undated
 
 
+def can_replace_with_official_bar(vendor_ohlc, official_ohlc, tolerance=1e-4):
+    """Allow full-bar replacement only when vendor data is incomplete and every
+    surviving vendor OHLC value agrees with the exact-date official bar.
+    """
+    keys = ("open", "high", "low", "close")
+    try:
+        official = {key: float(official_ohlc[key]) for key in keys}
+        vendor = {key: pd.to_numeric(vendor_ohlc.get(key), errors="coerce") for key in keys}
+    except (KeyError, TypeError, ValueError):
+        return False
+    if not all(np.isfinite(value) and value > 0 for value in official.values()):
+        return False
+    if not (
+        official["low"] <= min(official["open"], official["close"])
+        and official["high"] >= max(official["open"], official["close"])
+    ):
+        return False
+    if not any(pd.isna(value) for value in vendor.values()):
+        return False
+    for key, value in vendor.items():
+        if pd.notna(value) and abs(float(value) - official[key]) > tolerance:
+            return False
+    return True
+
+
 def validate_recent_ohlc(prices, lookback=251, relative_tolerance=1e-7, absolute_tolerance=1e-8, dates=None):
     """Validate OHLC relationships only in the observations used by 5/20/250-day metrics.
 
@@ -340,18 +365,12 @@ def run_global_analysis(market_id="tw-share"):
                                         )
                                         for column in ("open", "high", "low", "close")
                                     }
-                                    # A complete official bar may replace a completely missing
-                                    # vendor bar, but never mix individual raw/adjusted fields.
-                                    vendor_bar_missing = (
-                                        "open" in df.columns
-                                        and all(pd.isna(value) for value in vendor_ohlc.values())
+                                    # Replace the entire bar only when vendor OHLC is incomplete
+                                    # and every surviving value agrees with the exact-date TWSE bar.
+                                    vendor_bar_incomplete = can_replace_with_official_bar(
+                                        vendor_ohlc, official_values
                                     )
-                                    official_bar_valid = (
-                                        all(pd.notna(value) and value > 0 for value in official_values.values())
-                                        and official_values["low"] <= min(official_values["open"], official_values["close"])
-                                        and official_values["high"] >= max(official_values["open"], official_values["close"])
-                                    )
-                                    if vendor_bar_missing and official_bar_valid:
+                                    if vendor_bar_incomplete:
                                         for column, value in official_values.items():
                                             df.iloc[source_index, df.columns.get_loc(column)] = float(value)
                                             prices.iloc[source_index, prices.columns.get_loc(column)] = float(value)
@@ -365,7 +384,7 @@ def run_global_analysis(market_id="tw-share"):
                                                 f"🛠️ TWSE 官方完整 OHLC 補正 {tkr} "
                                                 f"{parsed_date.strftime('%Y-%m-%d')}："
                                                 f"open/high/low/close={official_values}；"
-                                                "四個欄位均缺值，整根採用同日期官方原始 K 棒，未混用來源"
+                                                "vendor bar 欄位不完整且既有值均與官方一致，整根採用官方原始 K 棒"
                                             )
                                     elif not vendor_bar_missing:
                                         official_low = reconcile_official_low(
