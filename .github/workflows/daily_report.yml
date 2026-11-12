@@ -1,84 +1,49 @@
-name: Global Market Monitor Parallel
+name: Taiwan Listed Common Stock Monitor
 
 on:
   schedule:
+    # 10:30 UTC = 18:30 Taiwan time, weekdays
     - cron: '30 10 * * 1-5'
   workflow_dispatch:
-    inputs:
-      market_choice:
-        description: 'Select Market'
-        required: true
-        default: 'all'
-        type: choice
-        options:
-          - all
-          - tw-share
-          - us-share
-          - hk-share
-          - cn-share
-          - jp-share
-          - kr-share
+
+permissions:
+  contents: read
 
 jobs:
-  global-market-analysis:
-    name: ${{ matrix.market.emoji }} ${{ matrix.market.name }} Analysis
+  taiwan-market-analysis:
+    name: Taiwan Listed Common Stocks
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        market:
-          - { id: "tw-share", name: "Taiwan", emoji: "🇹🇼" }
-          - { id: "us-share", name: "US",     emoji: "🇺🇸" }
-          - { id: "hk-share", name: "HK",     emoji: "🇭🇰" }
-          - { id: "cn-share", name: "China",  emoji: "🇨🇳" }
-          - { id: "jp-share", name: "Japan",  emoji: "🇯🇵" }
-          - { id: "kr-share", name: "Korea",  emoji: "🇰🇷" }
-
+    timeout-minutes: 60
     steps:
-      # 💡 修正點：將判斷移到第一個 Step 的 if 中
-      # 這樣如果不符合，第一個步驟就會跳過，後續步驟也會因為沒執行而停止
-      - name: Check if market should run
-        id: check_run
-        run: |
-          echo "Checking if ${{ matrix.market.id }} should run..."
-        if: |
-          github.event_name == 'schedule' || 
-          github.event.inputs.market_choice == 'all' || 
-          github.event.inputs.market_choice == matrix.market.id
-
-      - name: Checkout Code
-        # 💡 使用上次 Check 的結果來決定是否執行
-        if: steps.check_run.outcome == 'success'
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Python
-        if: steps.check_run.outcome == 'success'
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           cache: 'pip'
+          cache-dependency-path: requirements.txt
 
-      - name: Cache Stock Data
-        if: steps.check_run.outcome == 'success'
+      - name: Restore Taiwan price history cache
         uses: actions/cache@v4
         with:
           path: |
-            data/${{ matrix.market.id }}/dayK
-            data/${{ matrix.market.id }}/lists
-          key: ${{ runner.os }}-stock-${{ matrix.market.id }}-${{ github.run_id }}
+            data/tw-share/dayK
+            data/tw-share/lists
+          key: ${{ runner.os }}-tw-listed-common-${{ github.run_id }}
           restore-keys: |
-            ${{ runner.os }}-stock-${{ matrix.market.id }}-
+            ${{ runner.os }}-tw-listed-common-
 
-      - name: Environment Setup
-        if: steps.check_run.outcome == 'success'
+      - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y fonts-noto-cjk
           python -m pip install --upgrade pip
-          pip install pandas yfinance requests lxml tqdm resend matplotlib numpy xlrd pykrx tokyo-stock-exchange akshare
+          pip install -r requirements.txt
 
-      - name: Run Market Analysis
-        if: steps.check_run.outcome == 'success'
+      - name: Run Taiwan listed common-stock monitor
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-        run: python main.py --market ${{ matrix.market.id }}
+          REPORT_RECEIVER_EMAIL: ${{ secrets.REPORT_RECEIVER_EMAIL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python main.py --market tw-share
