@@ -290,8 +290,6 @@ def run_global_analysis(market_id="tw-share"):
                 prices, lookback=251, dates=history_dates
             )
             if not valid_ohlc:
-                # Preserve the raw vendor values for diagnosis. Never silently
-                # clamp or rewrite OHLC prices because that would fabricate market data.
                 recent_row = None
                 marker = "recent_row="
                 if marker in str(ohlc_reason):
@@ -299,24 +297,80 @@ def run_global_analysis(market_id="tw-share"):
                         recent_row = int(str(ohlc_reason).split(marker, 1)[1].split(";", 1)[0])
                     except (TypeError, ValueError):
                         recent_row = None
-                detail = str(ohlc_reason)
-                if recent_row is not None:
+
+                # A narrowly scoped correction is allowed only when TWSE's
+                # official high and close match the vendor bar exactly enough,
+                # the official OHLC is internally valid, and only the vendor
+                # low is inconsistent. No wholesale raw/adjusted-bar mixing.
+                corrected = False
+                if market_id == "tw-share" and recent_row is not None:
                     recent_start = max(0, len(prices) - 251)
                     source_index = recent_start + recent_row
-                    if 0 <= source_index < len(prices):
-                        date_col = next(
-                            (column for column in ("date", "datetime") if column in df.columns),
-                            None,
-                        )
-                        date_value = df.iloc[source_index][date_col] if date_col else "unknown"
-                        detail += (
-                            f"; date={date_value}; "
-                            f"close={prices.iloc[source_index]['close']}; "
-                            f"high={prices.iloc[source_index]['high']}; "
-                            f"low={prices.iloc[source_index]['low']}"
-                        )
-                skipped["invalid_ohlc"].append(f"{tkr}({detail})")
-                continue
+                    date_col = next(
+                        (column for column in ("date", "datetime") if column in df.columns),
+                        None,
+                    )
+                    if date_col and 0 <= source_index < len(prices):
+                        date_value = df.iloc[source_index][date_col]
+                        parsed_date = pd.to_datetime(date_value, errors="coerce")
+                        if pd.notna(parsed_date):
+                            try:
+                                from twse_audit import fetch_official_month_bars, reconcile_official_low
+
+                                official = fetch_official_month_bars(
+                                    tkr, month_date=parsed_date.date()
+                                )
+                                official_bar = next(
+                                    (
+                                        bar for bar in official.get("bars", [])
+                                        if bar["date"] == parsed_date.strftime("%Y-%m-%d")
+                                    ),
+                                    None,
+                                )
+                                if official_bar:
+                                    local_values = prices.iloc[source_index]
+                                    official_low = reconcile_official_low(
+                                        local_values["high"],
+                                        local_values["low"],
+                                        local_values["close"],
+                                        official_bar,
+                                    )
+                                    if official_low is not None:
+                                        df.iloc[source_index, df.columns.get_loc("low")] = official_low
+                                        prices.iloc[source_index, prices.columns.get_loc("low")] = official_low
+                                        df.to_csv(f, index=False, encoding="utf-8-sig")
+                                        valid_ohlc, ohlc_reason = validate_recent_ohlc(
+                                            prices, lookback=251, dates=history_dates
+                                        )
+                                        if valid_ohlc:
+                                            corrected = True
+                                            print(
+                                                f"🛠️ TWSE 官方核實修正 {tkr} {parsed_date.strftime('%Y-%m-%d')} "
+                                                f"low：{local_values['low']} -> {official_low}；"
+                                                "high/close 已與官方資料核對一致"
+                                            )
+                            except Exception as exc:
+                                print(f"⚠️ {tkr} 官方 OHLC 核實暫不可用：{type(exc).__name__}: {exc}")
+
+                if not valid_ohlc:
+                    detail = str(ohlc_reason)
+                    if recent_row is not None:
+                        recent_start = max(0, len(prices) - 251)
+                        source_index = recent_start + recent_row
+                        if 0 <= source_index < len(prices):
+                            date_col = next(
+                                (column for column in ("date", "datetime") if column in df.columns),
+                                None,
+                            )
+                            date_value = df.iloc[source_index][date_col] if date_col else "unknown"
+                            detail += (
+                                f"; date={date_value}; "
+                                f"close={prices.iloc[source_index]['close']}; "
+                                f"high={prices.iloc[source_index]['high']}; "
+                                f"low={prices.iloc[source_index]['low']}"
+                            )
+                    skipped["invalid_ohlc"].append(f"{tkr}({detail})")
+                    continue
             # Metrics below use at most the latest 251 closes and latest 250
             # highs/lows. Historical anomalies outside this window cannot
             # affect the reported periods and must not discard the whole stock.
