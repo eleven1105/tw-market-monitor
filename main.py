@@ -6,12 +6,7 @@ import traceback
 from datetime import datetime, timedelta
 
 # 導入自定義模組
-import downloader_tw
-import downloader_us
-import downloader_hk
-import downloader_cn
-import downloader_jp
-import downloader_kr
+import importlib
 import analyzer
 import notifier
 
@@ -33,22 +28,21 @@ def run_market_pipeline(market_id, market_name, emoji):
     print(f"【Step 1: 數據獲取】正在更新 {market_name} 原始 K 線資料...")
     try:
         res = None
-        # 根據市場 ID 呼叫對應的下載器主函數
-        if market_id == "tw-share":
-            res = downloader_tw.main()
-        elif market_id == "us-share":
-            res = downloader_us.main()
-        elif market_id == "hk-share":
-            res = downloader_hk.main()
-        elif market_id == "cn-share":
-            res = downloader_cn.main()
-        elif market_id == "jp-share":
-            res = downloader_jp.main()
-        elif market_id == "kr-share":
-            res = downloader_kr.main()
-        else:
+        # Load only the selected market downloader; avoid initializing other markets.
+        downloader_modules = {
+            "tw-share": "downloader_tw",
+            "us-share": "downloader_us",
+            "hk-share": "downloader_hk",
+            "cn-share": "downloader_cn",
+            "jp-share": "downloader_jp",
+            "kr-share": "downloader_kr",
+        }
+        module_name = downloader_modules.get(market_id)
+        if not module_name:
             print(f"⚠️ 未知的市場 ID: {market_id}")
             return
+        downloader = importlib.import_module(module_name)
+        res = downloader.main()
 
         # ✨ 數據標準化：對接新版下載器的 return 字典
         if isinstance(res, dict):
