@@ -325,9 +325,31 @@ def run_global_analysis(market_id="tw-share"):
     if market_id == "tw-share" and skipped["invalid_ohlc"]:
         from twse_audit import audit_twse_symbols
 
-        invalid_tickers = [item.split("(", 1)[0] for item in skipped["invalid_ohlc"]]
-        print("🔎 使用 TWSE 官方原始日成交資料查核 OHLC 異常標的（僅診斷，不自動改價）")
-        audit_twse_symbols(invalid_tickers, expected_date=latest_manifest_date)
+        invalid_tickers = []
+        target_bars = {}
+        for item in skipped["invalid_ohlc"]:
+            ticker, _, detail = item.partition("(")
+            invalid_tickers.append(ticker)
+            fields = {}
+            for part in detail.rstrip(")").split(";"):
+                key, sep, value = part.strip().partition("=")
+                if sep:
+                    fields[key.strip()] = value.strip()
+            parsed_date = pd.to_datetime(fields.get("date"), errors="coerce")
+            if pd.notna(parsed_date):
+                target_bars[ticker] = {
+                    "date": parsed_date.strftime("%Y-%m-%d"),
+                    "open": None,
+                    "high": pd.to_numeric(fields.get("high"), errors="coerce"),
+                    "low": pd.to_numeric(fields.get("low"), errors="coerce"),
+                    "close": pd.to_numeric(fields.get("close"), errors="coerce"),
+                }
+        print("🔎 使用 TWSE 官方原始日成交資料查核 OHLC 異常標的（精確異常日期比對；僅診斷，不自動改價）")
+        audit_twse_symbols(
+            invalid_tickers,
+            expected_date=latest_manifest_date,
+            target_bars=target_bars,
+        )
 
     skipped_total = sum(len(items) for items in skipped.values())
     print(f"🧪 資料品質摘要：候選 {len(all_files)} 檔；有效 {len(results)} 檔；排除 {skipped_total} 檔")
