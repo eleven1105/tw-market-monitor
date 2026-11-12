@@ -9,6 +9,12 @@ class TwseAuditTests(unittest.TestCase):
     def test_parses_roc_date(self):
         self.assertEqual(_parse_twse_date("115/11/12"), date(2026, 11, 12))
 
+    def test_parses_iso_timestamp_with_timezone(self):
+        self.assertEqual(
+            _parse_twse_date("2026-11-12 00:00:00+08:00"),
+            date(2026, 11, 12),
+        )
+
     def test_parses_price_and_empty_markers(self):
         self.assertEqual(_parse_price("1,234.50"), 1234.5)
         self.assertIsNone(_parse_price("--"))
