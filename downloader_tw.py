@@ -140,13 +140,26 @@ def main():
         save_universe(valid_frame, ANALYSIS_UNIVERSE_PATH)
         date_counts = valid_frame["data_date"].replace("", pd.NA).value_counts()
         if not date_counts.empty:
+            latest_universe_date = max(date_counts.index)
             print(
                 "📅 行情日期覆蓋："
-                f"最新 {date_counts.index.max()}；"
+                f"最新 {latest_universe_date}；"
                 f"最舊 {date_counts.index.min()}；"
                 f"不同日期 {len(date_counts)} 種；"
                 f"各日期檔數 {date_counts.sort_index().to_dict()}"
             )
+            lagged = valid_frame[
+                valid_frame["data_date"].ne(latest_universe_date)
+                & valid_frame["data_date"].ne("")
+            ]
+            if not lagged.empty:
+                print(
+                    "⚠️ 行情日期落後於全體最新日期的標的："
+                    + ", ".join(
+                        f"{row.ticker}({row.data_date})"
+                        for row in lagged.itertuples(index=False)
+                    )
+                )
         missing_dates = int(valid_frame["data_date"].eq("").sum())
         if missing_dates:
             log(f"⚠️ 白名單中有 {missing_dates} 檔缺少行情日期，後續需排除")
