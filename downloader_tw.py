@@ -120,10 +120,15 @@ def main():
                 latest_data_date = result.get("latest_data_date") or _latest_csv_date(
                     DATA_DIR / f"{result['ticker']}_{''.join(c for c in str(result['name']) if c.isalnum() or c in (' ', '_', '-')).strip()}.csv"
                 )
+                normalized_date = (
+                    pd.to_datetime(latest_data_date, errors="coerce").date().isoformat()
+                    if latest_data_date is not None and pd.notna(pd.to_datetime(latest_data_date, errors="coerce"))
+                    else ""
+                )
                 valid_rows.append({
                     "ticker": result["ticker"],
                     "name": result["name"],
-                    "latest_data_date": latest_data_date.isoformat() if latest_data_date else "",
+                    "latest_data_date": normalized_date,
                 })
             progress.update(1)
         progress.close()
