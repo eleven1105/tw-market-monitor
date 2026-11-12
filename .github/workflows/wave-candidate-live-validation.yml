@@ -10,6 +10,7 @@ on:
       - 'historical_chip_backfill.py'
       - 'point_in_time_chip_panel.py'
       - 'signal_baseline_analysis.py'
+      - 'nonoverlap_robustness.py'
       - '.github/workflows/wave-candidate-live-validation.yml'
   workflow_dispatch:
 
@@ -67,6 +68,8 @@ jobs:
         run: python point_in_time_chip_panel.py
       - name: Calculate descriptive signal baseline statistics
         run: python signal_baseline_analysis.py
+      - name: Run non-overlapping 20-session robustness sensitivity
+        run: python nonoverlap_robustness.py
       - name: Upload live candidate and chip audit
         if: always()
         uses: actions/upload-artifact@v4
@@ -83,4 +86,7 @@ jobs:
             output/point_in_time_chip_backtest_summary.json
             output/signal_baseline_statistics.csv
             output/signal_baseline_summary.json
+            output/nonoverlap_20d_offset_statistics.csv
+            output/nonoverlap_20d_robustness_summary.csv
+            output/nonoverlap_20d_robustness_metadata.json
           if-no-files-found: warn
