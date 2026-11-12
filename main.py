@@ -64,6 +64,16 @@ def run_market_pipeline(market_id, market_name, emoji):
     except Exception as e:
         print(f"❌ {market_name} 數據下載過程發生嚴重異常: {e}")
 
+    # Fail closed for Taiwan: never analyze restored CSVs if the current
+    # universe could not be fetched or no current-run data was validated.
+    if market_id == "tw-share" and (
+        not isinstance(stats, dict)
+        or int(stats.get("total", 0)) <= 0
+        or int(stats.get("success", 0)) <= 0
+    ):
+        print("❌ 本次台股下載未建立有效股票池或沒有成功資料，停止分析與寄信。")
+        return
+
     # --- Step 2: 數據分析 & 繪圖 ---
     print(f"\n【Step 2: 矩陣分析】正在計算 {market_name} 動能分布並生成圖表...")
     try:
