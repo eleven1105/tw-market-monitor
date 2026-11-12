@@ -95,7 +95,7 @@ class ValidateRecentOhlcTests(unittest.TestCase):
         })
         valid, reason, _ = validate_history_dates(frame)
         self.assertFalse(valid)
-        self.assertEqual(reason, "duplicate_recent_trading_date")
+        self.assertEqual(reason, "duplicate_trading_date")
 
     def test_missing_recent_date_is_rejected(self):
         frame = pd.DataFrame({
