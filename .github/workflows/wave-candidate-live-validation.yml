@@ -7,6 +7,7 @@ on:
     paths:
       - 'candidate_chip_pipeline.py'
       - 'historical_chip_coverage.py'
+      - 'historical_chip_backfill.py'
       - '.github/workflows/wave-candidate-live-validation.yml'
   workflow_dispatch:
 
@@ -54,6 +55,10 @@ jobs:
         env:
           FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
         run: python candidate_chip_pipeline.py
+      - name: Backfill two-year chip history for current top-30 pilot cohort
+        env:
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+        run: python historical_chip_backfill.py
       - name: Audit restored historical price and chip coverage
         run: python historical_chip_coverage.py
       - name: Upload live candidate and chip audit
@@ -67,4 +72,5 @@ jobs:
             output/wave_candidates_enriched.csv
             output/historical_chip_coverage.csv
             output/historical_chip_coverage_summary.json
+            output/historical_chip_backfill_status.json
           if-no-files-found: warn
