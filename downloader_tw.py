@@ -184,21 +184,25 @@ def main():
             for old_row in lagging_rows:
                 result = download_stock_data(old_row, force_refresh=True)
                 fetched_date = result.get("latest_data_date")
-                if (
-                    result["status"] == "success"
-                    and fetched_date
-                    and fetched_date >= latest_observed
-                ):
-                    old_row["data_date"] = fetched_date
-                    stats["success"] += 1
-                    stats["exists"] = max(0, stats["exists"] - 1)
-                    refreshed += 1
+                if result["status"] == "success" and fetched_date:
+                    if fetched_date > old_row["data_date"]:
+                        old_row["data_date"] = fetched_date
+                        stats["success"] += 1
+                        stats["exists"] = max(0, stats["exists"] - 1)
+                    if fetched_date >= latest_observed:
+                        refreshed += 1
+                    else:
+                        stats["stale_refresh"] += 1
+                        log(
+                            f"⚠️ {old_row['ticker']} 已更新至 {fetched_date}，"
+                            f"但仍落後共同基準日 {latest_observed}，暫不納入共同截面"
+                        )
                 else:
                     stats["stale_refresh"] += 1
                     log(
-                        f"⚠️ {old_row['ticker']} 定向更新未追上共同基準日 "
-                        f"{latest_observed}；來源回傳 {fetched_date or result['status']}，"
-                        f"保留舊檔並由分析白名單排除"
+                        f"⚠️ {old_row['ticker']} 定向更新未取得較新行情；"
+                        f"來源回傳 {fetched_date or result['status']}，"
+                        f"保留原始檔並由分析白名單排除"
                     )
             log(f"🔄 定向更新達標：{refreshed}/{len(lagging_rows)} 檔")
             still_lagging = [row["ticker"] for row in lagging_rows if row["data_date"] < latest_observed]
