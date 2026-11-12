@@ -15,6 +15,14 @@ class ValidateRecentOhlcTests(unittest.TestCase):
         })
         self.assertEqual(validate_recent_ohlc(prices), (True, None))
 
+    def test_accepts_float32_rounding_at_close_equals_official_low(self):
+        prices = pd.DataFrame({
+            "close": [30.049999237060547],
+            "high": [31.649999618530277],
+            "low": [30.05],
+        })
+        self.assertEqual(validate_recent_ohlc(prices), (True, None))
+
     def test_rejects_material_close_below_low(self):
         prices = pd.DataFrame({
             "close": [324.0],
