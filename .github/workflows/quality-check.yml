@@ -9,6 +9,7 @@ on:
       - maintenance/official-twse-audit-2026-11-12
       - maintenance/accurate-freshness-and-missing-bar-audit-2026-11-12
       - maintenance/official-low-reconciliation-2026-11-12
+      - maintenance/float32-price-tolerance-2026-11-12
   pull_request:
     branches:
       - research/tw-listed-common-stocks

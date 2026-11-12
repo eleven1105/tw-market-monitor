@@ -115,7 +115,7 @@ def filter_manifest_to_latest_date(manifest):
     return fresh_manifest, latest_date, lagging, undated
 
 
-def validate_recent_ohlc(prices, lookback=251, relative_tolerance=1e-8, absolute_tolerance=1e-8, dates=None):
+def validate_recent_ohlc(prices, lookback=251, relative_tolerance=1e-7, absolute_tolerance=1e-8, dates=None):
     """Validate OHLC relationships only in the observations used by 5/20/250-day metrics.
 
     Yahoo adjusted prices can differ by a few floating-point ulps. A scale-aware
