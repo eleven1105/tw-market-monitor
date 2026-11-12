@@ -348,7 +348,8 @@ def run_global_analysis(market_id="tw-share"):
                                             corrected = True
                                             print(
                                                 f"🛠️ TWSE 官方核實修正 {tkr} {parsed_date.strftime('%Y-%m-%d')} "
-                                                f"low：{local_values['low']} -> {official_low}；"
+                                                f"low：{float(local_values['low']):.10f} -> {float(official_low):.10f} "
+                                                f"(delta={float(official_low) - float(local_values['low']):.10f})；"
                                                 "high/close 已與官方資料核對一致"
                                             )
                             except Exception as exc:
