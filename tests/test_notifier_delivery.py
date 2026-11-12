@@ -45,6 +45,18 @@ class NotificationDeliveryTests(unittest.TestCase):
         self.assertFalse(email_sent)
         self.assertFalse(telegram_sent)
 
+    def test_notification_config_status_reports_presence_without_values(self):
+        from notifier import notification_config_status
+        status = notification_config_status({
+            'TELEGRAM_BOT_TOKEN': 'fake-token',
+            'RESEND_API_KEY': 'fake-key',
+        })
+        self.assertTrue(status['telegram_token_present'])
+        self.assertFalse(status['telegram_chat_id_present'])
+        self.assertTrue(status['email_api_key_present'])
+        self.assertFalse(status['email_recipient_present'])
+        self.assertNotIn('fake-token', str(status))
+        self.assertNotIn('fake-key', str(status))
 
 if __name__ == "__main__":
     unittest.main()
