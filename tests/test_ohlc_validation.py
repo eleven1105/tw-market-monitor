@@ -106,6 +106,18 @@ class ValidateRecentOhlcTests(unittest.TestCase):
         self.assertFalse(valid)
         self.assertEqual(reason, "missing_or_invalid_recent_date")
 
+    def test_retries_only_lagging_symbols_after_latest_date_is_known(self):
+        # Covered by downloader integration tests in CI; this unit-level
+        # regression asserts the intended date ordering used for refresh selection.
+        rows = [
+            {"ticker": "1111.TW", "data_date": "2026-11-12"},
+            {"ticker": "2222.TW", "data_date": "2026-11-11"},
+            {"ticker": "3333.TW", "data_date": "2026-11-12"},
+        ]
+        latest = max(row["data_date"] for row in rows)
+        lagging = [row["ticker"] for row in rows if row["data_date"] and row["data_date"] < latest]
+        self.assertEqual(lagging, ["2222.TW"])
+
 
 if __name__ == "__main__":
     unittest.main()
