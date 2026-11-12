@@ -176,16 +176,31 @@ def _load_dataset_rows(ticker, dataset, cache_dir=CACHE_DIR):
     return cached.get("data", []) if isinstance(cached, dict) else []
 
 
+def _investor_group(value):
+    name = str(value).strip().lower()
+    if "foreign" in name:
+        return "foreign"
+    if "investment" in name or "trust" in name:
+        return "trust"
+    if "dealer" in name:
+        return "dealer"
+    return None
+
+
 def score_chip_history(institutional_rows, margin_rows, target_date):
-    """Score recent institutional flows and margin changes using available rows only."""
-    inst = pd.DataFrame(institutional_rows)
-    margin = pd.DataFrame(margin_rows)
+    """Summarize total and per-investor 5/20-session flows plus margin changes."""
     result = {
         "chip_score": None, "institutional_net_5d": None,
         "institutional_net_20d": None, "institutional_positive_days_5d": None,
+        "foreign_net_5d": None, "foreign_net_20d": None,
+        "trust_net_5d": None, "trust_net_20d": None,
+        "dealer_net_5d": None, "dealer_net_20d": None,
+        "institutional_alignment_5d": None,
         "margin_balance_change_5d": None, "margin_balance_change_20d": None,
         "chip_data_status": "unavailable",
     }
+    inst = pd.DataFrame(institutional_rows)
+    margin = pd.DataFrame(margin_rows)
     if inst.empty or margin.empty:
         return result
     required_inst = {"date", "buy", "sell", "name"}
@@ -197,15 +212,28 @@ def score_chip_history(institutional_rows, margin_rows, target_date):
     inst["date"] = pd.to_datetime(inst["date"], errors="coerce")
     for col in ("buy", "sell"):
         inst[col] = pd.to_numeric(inst[col], errors="coerce")
-    inst = inst.dropna(subset=["date", "buy", "sell"]).sort_values("date")
-    inst = inst[inst["date"] <= pd.Timestamp(target_date)]
+    inst = inst.dropna(subset=["date", "buy", "sell"])
+    inst = inst[inst["date"] <= pd.Timestamp(target_date)].copy()
     if inst.empty:
         return result
     inst["net"] = inst["buy"] - inst["sell"]
+    inst["investor_group"] = inst["name"].map(_investor_group)
     daily = inst.groupby("date")["net"].sum().sort_index()
     last5, last20 = daily.tail(5), daily.tail(20)
     net5, net20 = float(last5.sum()), float(last20.sum())
     positive_days = int((last5 > 0).sum())
+
+    category_nets = {}
+    for group in ("foreign", "trust", "dealer"):
+        subset = inst[inst["investor_group"] == group]
+        grouped = subset.groupby("date")["net"].sum().sort_index()
+        category_nets[group] = (
+            float(grouped.tail(5).sum()) if not grouped.empty else None,
+            float(grouped.tail(20).sum()) if not grouped.empty else None,
+        )
+    observed_directions = [v[0] for v in category_nets.values() if v[0] is not None]
+    alignment = (sum(value > 0 for value in observed_directions)
+                 if observed_directions else None)
 
     margin["date"] = pd.to_datetime(margin["date"], errors="coerce")
     margin["MarginPurchaseTodayBalance"] = pd.to_numeric(
@@ -220,20 +248,29 @@ def score_chip_history(institutional_rows, margin_rows, target_date):
     change20 = (float(margin_daily.iloc[-1] - margin_daily.iloc[-21])
                 if len(margin_daily) >= 21 else None)
 
-    # Directional score: institutional accumulation is rewarded; rapid margin
-    # expansion modestly reduces the score because it can signal crowded leverage.
-    inst5_points = 35 if net5 > 0 else (17.5 if net5 == 0 else 0)
-    inst20_points = 35 if net20 > 0 else (17.5 if net20 == 0 else 0)
-    consistency_points = 20 * positive_days / max(1, len(last5))
-    margin_points = 10
-    if change5 is not None and change5 > 0:
-        margin_points = 5
-    chip_score = inst5_points + inst20_points + consistency_points + margin_points
+    # Equal category voting prevents a single large institution type from
+    # hiding disagreement. Only observed categories contribute to alignment.
+    available_groups = len(observed_directions)
+    alignment_points = (20.0 * alignment / available_groups
+                        if available_groups else 10.0)
+    inst5_points = 30 if net5 > 0 else (15 if net5 == 0 else 0)
+    inst20_points = 30 if net20 > 0 else (15 if net20 == 0 else 0)
+    consistency_points = 15 * positive_days / max(1, len(last5))
+    margin_points = 5 if change5 is not None and change5 > 0 else 10
+    chip_score = inst5_points + inst20_points + consistency_points + alignment_points + margin_points
+
     result.update({
         "chip_score": round(chip_score, 2),
         "institutional_net_5d": round(net5, 2),
         "institutional_net_20d": round(net20, 2),
         "institutional_positive_days_5d": positive_days,
+        "foreign_net_5d": round(category_nets["foreign"][0], 2) if category_nets["foreign"][0] is not None else None,
+        "foreign_net_20d": round(category_nets["foreign"][1], 2) if category_nets["foreign"][1] is not None else None,
+        "trust_net_5d": round(category_nets["trust"][0], 2) if category_nets["trust"][0] is not None else None,
+        "trust_net_20d": round(category_nets["trust"][1], 2) if category_nets["trust"][1] is not None else None,
+        "dealer_net_5d": round(category_nets["dealer"][0], 2) if category_nets["dealer"][0] is not None else None,
+        "dealer_net_20d": round(category_nets["dealer"][1], 2) if category_nets["dealer"][1] is not None else None,
+        "institutional_alignment_5d": f"{alignment}/{available_groups}" if available_groups else None,
         "margin_balance_change_5d": round(change5, 2) if change5 is not None else None,
         "margin_balance_change_20d": round(change20, 2) if change20 is not None else None,
         "chip_data_status": "available",
