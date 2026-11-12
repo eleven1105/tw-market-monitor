@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: '3.10'
           cache: 'pip'
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: requirements-tw.txt
 
       - name: Restore Taiwan price history cache
         uses: actions/cache@v4
@@ -38,7 +38,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-tw.txt
 
       - name: Run Taiwan listed common-stock monitor
         env:
