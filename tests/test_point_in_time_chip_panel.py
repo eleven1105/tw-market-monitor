@@ -16,7 +16,7 @@ class PointInTimePanelTests(unittest.TestCase):
             pd.DataFrame({
                 "Date": pd.date_range("2026-01-01", periods=25, freq="B"),
                 "Close": list(range(100, 125)),
-            }).to_csv(prices / "2330.TW_test.csv", index=False)
+            }).to_csv(prices / "2330_test.csv", index=False)
             dates = pd.date_range("2026-01-01", periods=25, freq="B")
             inst = []
             for d in dates:
