@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - maintenance/data-integrity-2026-11-12
+      - maintenance/refresh-lagging-and-ohlc-audit-2026-11-12
   workflow_dispatch:
 
 permissions:
