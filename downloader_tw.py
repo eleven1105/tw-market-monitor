@@ -47,7 +47,7 @@ def _latest_csv_date(path):
         return None
 
 
-def download_stock_data(row):
+def download_stock_data(row, force_refresh=False):
     ticker, name = row["ticker"], row["name"]
     safe_name = "".join(
         c for c in str(name) if c.isalnum() or c in (" ", "_", "-")
@@ -57,7 +57,7 @@ def download_stock_data(row):
     try:
         # Validate the actual last market-data date. GitHub cache restore can
         # reset file mtimes, so mtime alone must never certify fresh price data.
-        if output.exists() and output.stat().st_size > 1000:
+        if not force_refresh and output.exists() and output.stat().st_size > 1000:
             latest_date = _latest_csv_date(output)
             age_days = (datetime.now().date() - latest_date).days if latest_date else 999
             if latest_date and 0 <= age_days <= 5:
@@ -132,6 +132,32 @@ def main():
                 })
             progress.update(1)
         progress.close()
+
+    # A restored cache can be one trading day behind even when its calendar age
+    # is small. Once the batch establishes the freshest observed market date,
+    # selectively refresh only lagging symbols instead of accepting stale bars.
+    if valid_rows:
+        latest_observed = max(row["data_date"] for row in valid_rows if row["data_date"])
+        lagging_rows = [row for row in valid_rows if row["data_date"] and row["data_date"] < latest_observed]
+        if lagging_rows:
+            log(
+                f"🔄 發現 {len(lagging_rows)} 檔行情落後最新日期 {latest_observed}，"
+                "啟動定向強制更新"
+            )
+            refreshed = 0
+            for old_row in lagging_rows:
+                result = download_stock_data(old_row, force_refresh=True)
+                if result["status"] == "success" and result.get("latest_data_date"):
+                    old_row["data_date"] = result["latest_data_date"]
+                    stats["success"] += 1
+                    stats["exists"] = max(0, stats["exists"] - 1)
+                    refreshed += 1
+                else:
+                    log(
+                        f"⚠️ {old_row['ticker']} 定向更新未取得新行情，"
+                        f"保留舊日期 {old_row['data_date']} 並由分析白名單排除"
+                    )
+            log(f"🔄 定向更新完成：成功更新 {refreshed}/{len(lagging_rows)} 檔")
 
     # This manifest is the strict allow-list consumed by analyzer.py.
     if valid_rows:
