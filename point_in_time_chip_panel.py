@@ -28,8 +28,19 @@ def _load_json_rows(path):
 
 
 def _price_file(ticker, price_dir):
-    matches = sorted(Path(price_dir).glob(f"{ticker}_*.csv"))
-    return matches[0] if matches else None
+    price_dir = Path(price_dir)
+    # Price CSV names follow the ticker stored by the downloader. Support both
+    # Yahoo-style suffixes (2330.TW_) and numeric-only prefixes (2330_).
+    candidates = [str(ticker)]
+    normalized = str(ticker).upper().strip()
+    if normalized.endswith(".TW") or normalized.endswith(".TWO"):
+        candidates.append(normalized.rsplit(".", 1)[0])
+    matches = []
+    for candidate in candidates:
+        matches.extend(price_dir.glob(f"{candidate}_*.csv"))
+    # Deduplicate paths while preserving deterministic order.
+    unique = sorted({path.resolve() for path in matches})
+    return Path(unique[0]) if unique else None
 
 
 def _investor_bucket(value):
@@ -130,8 +141,10 @@ def build_panel(candidates_path=CANDIDATES, price_dir=PRICE_DIR, chip_dir=CHIP_D
             frames.append(build_symbol_panel(row["ticker"], row.get("name", row["ticker"]), price_dir, chip_dir))
         except Exception as exc:
             errors.append({"ticker": row["ticker"], "error": f"{type(exc).__name__}: {exc}"})
+    if errors:
+        print("POINT_IN_TIME_PANEL_SYMBOL_ERRORS=" + json.dumps(errors, ensure_ascii=False))
     if not frames:
-        raise RuntimeError("no symbol panels could be built")
+        raise RuntimeError("no symbol panels could be built; see POINT_IN_TIME_PANEL_SYMBOL_ERRORS above")
     panel = pd.concat(frames, ignore_index=True).sort_values(["ticker", "date"])
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUTPUT_DIR / "point_in_time_chip_backtest_panel.csv"
