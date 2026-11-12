@@ -13,6 +13,13 @@ def build_taiwan_summary(report_df, stats=None, max_candidates=5):
     lines = ["📊 <b>台股收盤研究摘要</b>", f"分析樣本：{len(report_df)} 檔"]
     if stats.get("current_date") is not None and stats.get("total") is not None:
         lines.append(f"符合共同最新行情日：{stats.get('current_date')}/{stats.get('total')} 檔")
+    if "Day_Close" in report_df.columns:
+        daily = pd.to_numeric(report_df["Day_Close"], errors="coerce").dropna()
+        if not daily.empty:
+            up, down, flat = int((daily > 0).sum()), int((daily < 0).sum()), int((daily == 0).sum())
+            lines.extend(["", "<b>單日市場廣度（共同最新交易日）</b>",
+                          f"上漲 {up}／下跌 {down}／持平 {flat}（樣本 {len(daily)} 檔）",
+                          f"平均 {daily.mean():.2f}%｜中位數 {daily.median():.2f}%"])
     if "Week_Close" in report_df.columns:
         values = pd.to_numeric(report_df["Week_Close"], errors="coerce").dropna()
         if not values.empty:
