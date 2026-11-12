@@ -2,13 +2,13 @@
 import os
 import numpy as np
 import pandas as pd
+import matplotlib
+
+# Select a headless backend before importing pyplot (GitHub Actions safe).
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from pathlib import Path
 from tqdm import tqdm
-import matplotlib
-
-# 強制使用 Agg 後端以確保在 GitHub Actions 等無界面環境穩定執行
-matplotlib.use('Agg')
 
 # 字體設定 (支援中日韓字元，確保簡繁中、日、韓文顯示正常)
 plt.rcParams['font.sans-serif'] = ['Noto Sans CJK TC', 'Noto Sans CJK JP', 'Noto Sans CJK KR', 'Microsoft JhengHei', 'Arial Unicode MS', 'sans-serif']
@@ -144,6 +144,40 @@ def validate_recent_ohlc(prices, lookback=251, relative_tolerance=1e-8, absolute
     return True, None
 
 
+
+def validate_history_dates(frame, expected_latest_date=None, lookback=251):
+    """Validate dated price history and return a chronologically sorted copy."""
+    date_column = next(
+        (column for column in ("date", "datetime") if column in frame.columns),
+        None,
+    )
+    if date_column is None:
+        return False, "missing_date_column", frame
+
+    parsed = pd.to_datetime(frame[date_column], errors="coerce")
+    if parsed.tail(lookback).isna().any():
+        return False, "missing_or_invalid_recent_date", frame
+
+    valid = parsed.notna()
+    if not valid.any():
+        return False, "no_valid_trading_dates", frame
+    if parsed.loc[valid].duplicated().any():
+        return False, "duplicate_trading_date", frame
+
+    latest_date = parsed.loc[valid].max().strftime("%Y-%m-%d")
+    if expected_latest_date:
+        expected = pd.to_datetime(expected_latest_date, errors="coerce")
+        if pd.isna(expected) or latest_date != expected.strftime("%Y-%m-%d"):
+            return False, (
+                f"latest_date_mismatch; actual={latest_date}; "
+                f"manifest={expected_latest_date}"
+            ), frame
+
+    normalized = frame.loc[valid].copy()
+    normalized["_parsed_date"] = parsed.loc[valid]
+    normalized = normalized.sort_values("_parsed_date").drop(columns=["_parsed_date"])
+    return True, None, normalized
+
 def run_global_analysis(market_id="tw-share"):
     """
     分析主邏輯：讀取 CSV -> 計算回報率 -> 繪製分布圖 -> 生成文字報表
@@ -181,7 +215,11 @@ def run_global_analysis(market_id="tw-share"):
             fresh_manifest, latest_manifest_date, lagging, undated = (
                 filter_manifest_to_latest_date(manifest)
             )
-            allowed = set(fresh_manifest["ticker"].dropna().astype(str))
+            expected_dates = {
+                str(row.ticker): str(row.data_date)
+                for row in fresh_manifest[["ticker", "data_date"]].itertuples(index=False)
+            }
+            allowed = set(expected_dates)
             print(
                 f"📅 本次共同行情基準日：{latest_manifest_date}；"
                 f"納入 {len(allowed)} 檔；"
@@ -217,6 +255,13 @@ def run_global_analysis(market_id="tw-share"):
         try:
             df = pd.read_csv(f)
             df.columns = [str(col).lower() for col in df.columns]
+            if market_id == "tw-share":
+                dates_valid, date_reason, df = validate_history_dates(
+                    df, expected_latest_date=expected_dates.get(tkr), lookback=251
+                )
+                if not dates_valid:
+                    skipped["read_or_parse_error"].append(f"{tkr}({date_reason})")
+                    continue
             required = {"close", "high", "low"}
             if not required.issubset(df.columns):
                 skipped["missing_columns"].append(tkr)
@@ -260,6 +305,17 @@ def run_global_analysis(market_id="tw-share"):
 
     df_res = pd.DataFrame(results)
     if df_res.empty: return [], df_res, {}
+
+    # Report the usable cross-sectional coverage of each rolling return period.
+    candidate_count = len(all_files)
+    for period, days in (("Week", 5), ("Month", 20), ("Year", 250)):
+        column = f"{period}_Close"
+        available = int(df_res[column].notna().sum()) if column in df_res else 0
+        coverage = available / candidate_count * 100 if candidate_count else 0.0
+        print(
+            f"📈 {days} 交易日資料覆蓋：{available}/{candidate_count} "
+            f"({coverage:.1f}%)"
+        )
 
     # --- 繪圖邏輯 ---
     images = []

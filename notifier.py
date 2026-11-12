@@ -37,7 +37,11 @@ class StockNotifier:
             "parse_mode": "HTML"
         }
         try:
-            requests.post(url, json=payload, timeout=10)
+            response = requests.post(url, json=payload, timeout=10)
+            response.raise_for_status()
+            result = response.json()
+            if not result.get("ok", False):
+                raise RuntimeError(f"Telegram API rejected message: {result}")
             return True
         except Exception as e:
             print(f"⚠️ Telegram 發送失敗: {e}")
@@ -50,6 +54,15 @@ class StockNotifier:
         """
         # 🟢 Debug 訊息：方便在終端機確認 main.py 傳進來的數值
         print(f"DEBUG: notifier 正在處理 {market_name} 報告 (Stats: {stats})")
+
+        if not self.report_receiver_email:
+            print("ℹ️ 未設定 REPORT_RECEIVER_EMAIL，依設定略過 Email 通知。")
+            tg_msg = (
+                f"📊 <b>{market_name} 監控分析已完成</b>\n"
+                f"有效分析樣本: {len(report_df)} 檔"
+            )
+            self.send_telegram(tg_msg)
+            return True
 
         if not self.resend_api_key:
             print("⚠️ 缺少 Resend API Key，無法寄信。")
@@ -66,7 +79,7 @@ class StockNotifier:
         # 成功家數
         success_count = stats.get('success', len(report_df))
         
-        # 計算今日覆蓋率 (百分比)
+        # 計算有效資料覆蓋率（含快取） (百分比)
         try:
             total_val = int(total_count)
             success_val = int(success_count)
