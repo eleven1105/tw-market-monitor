@@ -117,11 +117,14 @@ def build_symbol_panel(ticker, name, price_dir=PRICE_DIR, chip_dir=CHIP_DIR):
             col = f"{bucket}_net_daily"
             price[f"{bucket}_net_5d"] = price[col].rolling(5, min_periods=5).sum()
             price[f"{bucket}_net_20d"] = price[col].rolling(20, min_periods=20).sum()
+        direction_columns = [f"{b}_net_5d" for b in ("foreign", "trust", "dealer")]
         directions = pd.concat(
-            [(price[f"{b}_net_5d"] > 0).astype("Int64") for b in ("foreign", "trust", "dealer")],
+            [(price[col] > 0).where(price[col].notna()) for col in direction_columns],
             axis=1,
         )
-        price["institutional_alignment_5d"] = directions.sum(axis=1, min_count=1)
+        # Alignment is defined only when all three investor groups have a
+        # complete five-session observation window. Missing is not 0/3.
+        price["institutional_alignment_5d"] = directions.sum(axis=1, min_count=3)
     else:
         for col in ("institutional_net_daily", "institutional_net_5d", "institutional_net_20d",
                     "foreign_net_daily", "foreign_net_5d", "foreign_net_20d",
