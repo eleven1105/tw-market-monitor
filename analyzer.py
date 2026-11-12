@@ -169,8 +169,14 @@ def run_global_analysis(market_id="tw-share"):
             if (close <= 0).any() or (high <= 0).any() or (low <= 0).any():
                 skipped["invalid_ohlc"].append(f"{tkr}(non_positive_price)")
                 continue
-            if (high < low).any() or (high < close).any() or (low > close).any():
-                skipped["invalid_ohlc"].append(f"{tkr}(inconsistent_high_low_close)")
+            bad_mask = (high < low) | (high < close) | (low > close)
+            if bad_mask.any():
+                bad_idx = int(np.flatnonzero(bad_mask)[0])
+                date_value = df.iloc[bad_idx].get("date", df.iloc[bad_idx].get("datetime", "unknown"))
+                skipped["invalid_ohlc"].append(
+                    f"{tkr}(inconsistent_high_low_close; date={date_value}; "
+                    f"high={high[bad_idx]}; low={low[bad_idx]}; close={close[bad_idx]})"
+                )
                 continue
 
             row = {"Ticker": tkr, "Full_Name": nm}
