@@ -51,8 +51,8 @@ class PointInTimePanelTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); prices = root / "prices"; chips = root / "chips"
             prices.mkdir(); chips.mkdir()
-            dates = pd.date_range("2026-01-01", periods=10, freq="B", tz="Asia/Taipei")
-            pd.DataFrame({"Date": dates, "Close": list(range(100, 110))}).to_csv(
+            dates = pd.date_range("2026-01-01", periods=12, freq="B", tz="Asia/Taipei")
+            pd.DataFrame({"Date": dates, "Close": list(range(100, 112))}).to_csv(
                 prices / "2330_test.csv", index=False
             )
             inst = []
@@ -74,7 +74,7 @@ class PointInTimePanelTests(unittest.TestCase):
             self.assertTrue(pd.isna(panel.loc[7, "institutional_net_5d"]))
             self.assertTrue(pd.isna(panel.loc[7, "margin_balance_change_5d"]))
             # Once five consecutive observed sessions are available again, value returns.
-            self.assertTrue(pd.notna(panel.loc[9, "institutional_net_5d"]))
+            self.assertTrue(pd.notna(panel.loc[11, "institutional_net_5d"]))
 
 
 if __name__ == "__main__":
