@@ -153,9 +153,32 @@ def run_global_analysis(market_id="tw-share"):
             today = pd.Timestamp.now().date()
             if created.empty or created.dt.date.nunique() != 1 or created.dt.date.iloc[0] != today:
                 raise ValueError("manifest 建立日期非本次執行日期")
-            if manifest["data_date"].isna().all():
+            # Cross-sectional return distributions must use one common
+            # observation date. Lagging and undated symbols remain in the
+            # source manifest for audit, but are excluded from this snapshot.
+            normalized_dates = pd.to_datetime(
+                manifest["data_date"], errors="coerce"
+            ).dt.strftime("%Y-%m-%d")
+            if normalized_dates.notna().sum() == 0:
                 raise ValueError("白名單沒有任何有效行情日期")
-            allowed = set(manifest["ticker"].dropna().astype(str))
+            latest_manifest_date = normalized_dates.max()
+            fresh_mask = normalized_dates.eq(latest_manifest_date)
+            allowed = set(manifest.loc[fresh_mask, "ticker"].dropna().astype(str))
+            lagging = manifest.loc[
+                normalized_dates.notna() & ~fresh_mask, "ticker"
+            ].dropna().astype(str).tolist()
+            undated = manifest.loc[
+                normalized_dates.isna(), "ticker"
+            ].dropna().astype(str).tolist()
+            print(
+                f"📅 本次共同行情基準日：{latest_manifest_date}；"
+                f"納入 {len(allowed)} 檔；"
+                f"排除日期落後 {len(lagging)} 檔、無日期 {len(undated)} 檔"
+            )
+            if lagging:
+                print("⚠️ 日期落後排除：" + ", ".join(lagging))
+            if undated:
+                print("⚠️ 無有效日期排除：" + ", ".join(undated))
         except Exception as exc:
             print(f"❌ 台股白名單驗證失敗，拒絕分析：{exc}")
             return [], pd.DataFrame(), {}
