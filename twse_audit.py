@@ -198,12 +198,23 @@ def audit_twse_symbols(tickers, expected_date=None, target_bars=None):
                     if target_bar else
                     f"🔬 異常日精確比對 {ticker} {target_date}: TWSE 該月無該日資料"
                 )
+            target_classification = None
+            if target_date:
+                target_classification = classify_market_data_status(
+                    official_bar=target_bar,
+                    local_bar=target,
+                    official_source_status="ok",
+                    exchange_suspended=bool(target.get("exchange_suspended", False)),
+                    exchange_open=bool(target.get("exchange_open", False)),
+                )
+                print(f"🧭 行情狀態分類 {ticker} {target_date}: {target_classification['classification']} ({target_classification['reason']})")
             results[ticker] = {
                 "status": "ok",
                 "latest": latest,
                 "expected": expected_bar,
                 "target": target_bar,
                 "target_local": target,
+                "target_classification": target_classification,
                 "unavailable_months": statuses,
             }
         except Exception as exc:
