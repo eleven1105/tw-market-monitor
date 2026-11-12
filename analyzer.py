@@ -98,10 +98,13 @@ def filter_manifest_to_latest_date(manifest):
     normalized_dates = pd.to_datetime(
         manifest["data_date"], errors="coerce"
     ).dt.strftime("%Y-%m-%d")
-    if normalized_dates.notna().sum() == 0:
+    valid_dates = normalized_dates.dropna().astype(str)
+    if valid_dates.empty:
         raise ValueError("白名單沒有任何有效行情日期")
-    latest_date = normalized_dates.max()
-    fresh_mask = normalized_dates.eq(latest_date)
+    # Pandas may retain mixed object values (date strings and NaN); compare
+    # normalized strings only after removing missing values.
+    latest_date = valid_dates.max()
+    fresh_mask = normalized_dates.astype("string").eq(latest_date).fillna(False)
     fresh_manifest = manifest.loc[fresh_mask].copy()
     lagging = manifest.loc[
         normalized_dates.notna() & ~fresh_mask, "ticker"
