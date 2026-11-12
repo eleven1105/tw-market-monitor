@@ -1,0 +1,9 @@
+# Dependencies required by the Taiwan-only GitHub Actions workflow
+pandas
+numpy
+matplotlib
+yfinance
+tqdm
+resend
+requests
+lxml
