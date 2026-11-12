@@ -93,6 +93,25 @@ def build_company_list(arr_pct, codes, names, bins, market_id):
 
     return "\n".join(lines)
 
+def filter_manifest_to_latest_date(manifest):
+    """Return one-date cross-sectional universe plus lagging/undated ticker lists."""
+    normalized_dates = pd.to_datetime(
+        manifest["data_date"], errors="coerce"
+    ).dt.strftime("%Y-%m-%d")
+    if normalized_dates.notna().sum() == 0:
+        raise ValueError("白名單沒有任何有效行情日期")
+    latest_date = normalized_dates.max()
+    fresh_mask = normalized_dates.eq(latest_date)
+    fresh_manifest = manifest.loc[fresh_mask].copy()
+    lagging = manifest.loc[
+        normalized_dates.notna() & ~fresh_mask, "ticker"
+    ].dropna().astype(str).tolist()
+    undated = manifest.loc[
+        normalized_dates.isna(), "ticker"
+    ].dropna().astype(str).tolist()
+    return fresh_manifest, latest_date, lagging, undated
+
+
 def validate_recent_ohlc(prices, lookback=251, relative_tolerance=1e-8, absolute_tolerance=1e-8):
     """Validate OHLC relationships only in the observations used by 5/20/250-day metrics.
 
@@ -156,20 +175,10 @@ def run_global_analysis(market_id="tw-share"):
             # Cross-sectional return distributions must use one common
             # observation date. Lagging and undated symbols remain in the
             # source manifest for audit, but are excluded from this snapshot.
-            normalized_dates = pd.to_datetime(
-                manifest["data_date"], errors="coerce"
-            ).dt.strftime("%Y-%m-%d")
-            if normalized_dates.notna().sum() == 0:
-                raise ValueError("白名單沒有任何有效行情日期")
-            latest_manifest_date = normalized_dates.max()
-            fresh_mask = normalized_dates.eq(latest_manifest_date)
-            allowed = set(manifest.loc[fresh_mask, "ticker"].dropna().astype(str))
-            lagging = manifest.loc[
-                normalized_dates.notna() & ~fresh_mask, "ticker"
-            ].dropna().astype(str).tolist()
-            undated = manifest.loc[
-                normalized_dates.isna(), "ticker"
-            ].dropna().astype(str).tolist()
+            fresh_manifest, latest_manifest_date, lagging, undated = (
+                filter_manifest_to_latest_date(manifest)
+            )
+            allowed = set(fresh_manifest["ticker"].dropna().astype(str))
             print(
                 f"📅 本次共同行情基準日：{latest_manifest_date}；"
                 f"納入 {len(allowed)} 檔；"
