@@ -9,6 +9,7 @@ on:
       - 'historical_chip_coverage.py'
       - 'historical_chip_backfill.py'
       - 'point_in_time_chip_panel.py'
+      - 'signal_baseline_analysis.py'
       - '.github/workflows/wave-candidate-live-validation.yml'
   workflow_dispatch:
 
@@ -64,6 +65,8 @@ jobs:
         run: python historical_chip_coverage.py
       - name: Build point-in-time daily price and chip panel
         run: python point_in_time_chip_panel.py
+      - name: Calculate descriptive signal baseline statistics
+        run: python signal_baseline_analysis.py
       - name: Upload live candidate and chip audit
         if: always()
         uses: actions/upload-artifact@v4
@@ -78,4 +81,6 @@ jobs:
             output/historical_chip_backfill_status.json
             output/point_in_time_chip_backtest_panel.csv
             output/point_in_time_chip_backtest_summary.json
+            output/signal_baseline_statistics.csv
+            output/signal_baseline_summary.json
           if-no-files-found: warn
