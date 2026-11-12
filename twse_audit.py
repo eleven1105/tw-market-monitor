@@ -117,6 +117,34 @@ def reconcile_official_low(local_high, local_low, local_close, official_bar, tol
         return None
     return official_low
 
+
+def classify_market_data_status(official_bar, local_bar=None, official_source_status='ok', exchange_suspended=False, exchange_open=False):
+    """Classify an exact-date gap; never infer suspension from a missing bar."""
+    if official_source_status != 'ok':
+        return {'classification': 'official_source_unavailable', 'reason': 'TWSE source status: ' + str(official_source_status)}
+    if official_bar is not None:
+        if local_bar is None:
+            return {'classification': 'vendor_bar_missing_or_stale', 'reason': 'TWSE exact-date bar exists but local vendor bar is absent'}
+        if str(local_bar.get('date', '')) != str(official_bar.get('date', '')):
+            return {'classification': 'vendor_bar_missing_or_stale', 'reason': 'local and official bar dates differ'}
+        try:
+            complete = all(local_bar.get(k) is not None and float(local_bar[k]) > 0 for k in ('open', 'high', 'low', 'close'))
+        except (TypeError, ValueError):
+            complete = False
+        if not complete:
+            return {'classification': 'vendor_bar_incomplete', 'reason': 'local exact-date OHLC has missing or non-positive values'}
+        return {'classification': 'official_and_vendor_bar_present', 'reason': 'both exact-date bars exist; price reconciliation remains separate'}
+    if exchange_suspended:
+        return {'classification': 'confirmed_suspension', 'reason': 'suspension explicitly confirmed by an authoritative notice'}
+    if exchange_open and local_bar is not None:
+        try:
+            volume = float(local_bar.get('volume'))
+        except (TypeError, ValueError):
+            volume = None
+        if volume == 0:
+            return {'classification': 'zero_volume_no_trade', 'reason': 'exchange open and record explicitly reports zero volume'}
+    return {'classification': 'unknown_no_official_bar', 'reason': 'no official bar and no authoritative suspension/no-trade evidence'}
+
 def audit_twse_symbols(tickers, expected_date=None, target_bars=None):
     """Compare exact flagged dates with TWSE raw bars; diagnostics only, never rewrite prices."""
     results = {}
