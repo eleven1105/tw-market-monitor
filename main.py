@@ -21,9 +21,6 @@ def run_market_pipeline(market_id, market_name, emoji):
     # 初始化統計變數，預設為 0
     stats = {"total": 0, "success": 0, "fail": 0}
     
-    # 建立通知器實例 (用於發送 Telegram 與 Resend 郵件)
-    agent = notifier.StockNotifier()
-
     # --- Step 1: 數據獲取 ---
     print(f"【Step 1: 數據獲取】正在更新 {market_name} 原始 K 線資料...")
     try:
@@ -95,24 +92,9 @@ def run_market_pipeline(market_id, market_name, emoji):
         
         print(f"✅ 分析完成！成功處理 {len(report_df)} 檔有效數據。")
 
-        # --- Step 3: 報表發送 ---
-        print(f"\n【Step 3: 報表發送】正在透過 Resend 傳送郵件...")
-        
-        # 將下載統計 (stats) 與分析結果一併送出
-        success_sent = agent.send_stock_report(
-            market_name=market_name,
-            img_data=img_paths,
-            report_df=report_df,
-            text_reports=text_reports,
-            stats=stats
-        )
-        
-        if success_sent:
-            print(f"✅ {market_name} 監控報告已成功寄達！")
-        else:
-            print(f"❌ {market_name} 報告寄送失敗 (請檢查 API Key 或日誌)。")
-            if market_id == "tw-share":
-                raise RuntimeError("Taiwan report delivery failed")
+        # Notifications intentionally paused. Keep analysis and artifact generation available
+        # for manual maintenance runs without sending Email or Telegram messages.
+        print("🔕 Email / Telegram notifications are paused; analysis completed without delivery.")
 
     except Exception as e:
         print(f"❌ {market_name} 分析或寄信過程出錯:\n{traceback.format_exc()}")
