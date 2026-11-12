@@ -58,7 +58,7 @@ class StockNotifier:
         if not self.report_receiver_email:
             print("ℹ️ 未設定 REPORT_RECEIVER_EMAIL，依設定略過 Email 通知。")
             tg_msg = (
-                f"📊 <b>{market_name} 監控分析已完成</b>\\n"
+                f"📊 <b>{market_name} 監控分析已完成</b>\n"
                 f"有效分析樣本: {len(report_df)} 檔"
             )
             self.send_telegram(tg_msg)
