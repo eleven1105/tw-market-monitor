@@ -11,6 +11,7 @@ import yfinance as yf
 from tqdm import tqdm
 
 from stock_universe_tw import fetch_listed_common_stocks, save_universe
+from twse_audit import audit_twse_symbols
 
 MARKET_CODE = "tw-share"
 BASE_DIR = Path(__file__).resolve().parent
@@ -72,6 +73,8 @@ def download_stock_data(row, force_refresh=False):
     output = DATA_DIR / f"{ticker}_{safe_name}.csv"
 
     try:
+        # Preserve the newest cached history if a vendor refresh returns an older snapshot.
+        cached_latest = _latest_csv_date(output) if output.exists() else None
         # Validate the actual last market-data date. GitHub cache restore can
         # reset file mtimes, so mtime alone must never certify fresh price data.
         if not force_refresh and output.exists() and output.stat().st_size > 1000:
@@ -94,11 +97,20 @@ def download_stock_data(row, force_refresh=False):
                     required = {"close", "high", "low"}
                     if not required.issubset(history.columns):
                         return {"status": "error", "ticker": ticker, "name": name}
-                    history.to_csv(output, index=False, encoding="utf-8-sig")
                     latest_date = pd.to_datetime(history["date"], errors="coerce").dropna().max()
+                    if pd.isna(latest_date):
+                        return {"status": "error", "ticker": ticker, "name": name}
+                    fetched_date = latest_date.date()
+                    if cached_latest and fetched_date < cached_latest:
+                        return {
+                            "status": "stale", "ticker": ticker, "name": name,
+                            "latest_data_date": fetched_date.isoformat(),
+                            "cached_data_date": cached_latest.isoformat(),
+                        }
+                    history.to_csv(output, index=False, encoding="utf-8-sig")
                     return {
                         "status": "success", "ticker": ticker, "name": name,
-                        "latest_data_date": latest_date.date().isoformat(),
+                        "latest_data_date": fetched_date.isoformat(),
                     }
                 if attempt == 1:
                     return {"status": "empty", "ticker": ticker, "name": name}
@@ -125,7 +137,7 @@ def main():
     rows = universe[["ticker", "name"]].to_dict("records")
     log(f"🚀 僅下載證交所上市普通股，共 {len(rows)} 檔")
 
-    stats = {"success": 0, "exists": 0, "empty": 0, "error": 0}
+    stats = {"success": 0, "exists": 0, "empty": 0, "error": 0, "stale_refresh": 0}
     valid_rows = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = [executor.submit(download_stock_data, row) for row in rows]
@@ -164,17 +176,28 @@ def main():
             refreshed = 0
             for old_row in lagging_rows:
                 result = download_stock_data(old_row, force_refresh=True)
-                if result["status"] == "success" and result.get("latest_data_date"):
-                    old_row["data_date"] = result["latest_data_date"]
+                fetched_date = result.get("latest_data_date")
+                if (
+                    result["status"] == "success"
+                    and fetched_date
+                    and fetched_date >= latest_observed
+                ):
+                    old_row["data_date"] = fetched_date
                     stats["success"] += 1
                     stats["exists"] = max(0, stats["exists"] - 1)
                     refreshed += 1
                 else:
+                    stats["stale_refresh"] += 1
                     log(
-                        f"⚠️ {old_row['ticker']} 定向更新未取得新行情，"
-                        f"保留舊日期 {old_row['data_date']} 並由分析白名單排除"
+                        f"⚠️ {old_row['ticker']} 定向更新未追上共同基準日 "
+                        f"{latest_observed}；來源回傳 {fetched_date or result['status']}，"
+                        f"保留舊檔並由分析白名單排除"
                     )
-            log(f"🔄 定向更新完成：成功更新 {refreshed}/{len(lagging_rows)} 檔")
+            log(f"🔄 定向更新達標：{refreshed}/{len(lagging_rows)} 檔")
+            still_lagging = [row["ticker"] for row in lagging_rows if row["data_date"] < latest_observed]
+            if still_lagging:
+                log("🔎 改以 TWSE 官方原始日成交資料查核落後標的")
+                audit_twse_symbols(still_lagging, expected_date=latest_observed)
 
     # This manifest is the strict allow-list consumed by analyzer.py.
     if valid_rows:
