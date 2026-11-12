@@ -1,0 +1,37 @@
+name: FinMind Chip Data Probe
+
+on:
+  push:
+    branches:
+      - maintenance/finmind-chip-probe-2026-11-12
+    paths:
+      - 'scripts/finmind_chip_probe.py'
+      - '.github/workflows/finmind-chip-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install probe dependency
+        run: python -m pip install requests
+      - name: Probe FinMind institutional and margin datasets
+        env:
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+        run: python scripts/finmind_chip_probe.py
+      - name: Upload probe report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: finmind-chip-probe
+          path: output/finmind_chip_probe.json
+          if-no-files-found: ignore
