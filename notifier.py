@@ -5,6 +5,33 @@ import resend
 import pandas as pd
 from datetime import datetime, timedelta
 
+def build_taiwan_summary(report_df, stats=None, max_candidates=5):
+    """Summarize validated 5-trading-day returns; never mislabel them as daily breadth."""
+    stats = stats or {}
+    if report_df is None or report_df.empty:
+        return "⚠️ 分析樣本為空，沒有可用的市場摘要。"
+    lines = ["📊 <b>台股收盤研究摘要</b>", f"分析樣本：{len(report_df)} 檔"]
+    if stats.get("current_date") is not None and stats.get("total") is not None:
+        lines.append(f"符合共同最新行情日：{stats.get('current_date')}/{stats.get('total')} 檔")
+    if "Week_Close" in report_df.columns:
+        values = pd.to_numeric(report_df["Week_Close"], errors="coerce").dropna()
+        if not values.empty:
+            up, down, flat = int((values > 0).sum()), int((values < 0).sum()), int((values == 0).sum())
+            lines.extend(["", "<b>近 5 交易日報酬概況（非單日漲跌家數）</b>",
+                          f"上漲 {up}／下跌 {down}／持平 {flat}",
+                          f"平均報酬 {values.mean():.2f}%｜中位數 {values.median():.2f}%"])
+    if {"Week_Close", "Ticker"}.issubset(report_df.columns):
+        ranked = report_df[["Ticker", "Week_Close"]].copy()
+        ranked["Week_Close"] = pd.to_numeric(ranked["Week_Close"], errors="coerce")
+        ranked = ranked.dropna().nlargest(max_candidates, "Week_Close")
+        if not ranked.empty:
+            lines.extend(["", "<b>近 5 交易日報酬領先觀察（研究排序）</b>"])
+            for row in ranked.itertuples(index=False):
+                lines.append(f"• {row.Ticker}：{row.Week_Close:.2f}%")
+    lines.extend(["", "⚠️ 5 日報酬不代表今日漲跌，亦非買賣訊號。"])
+    return "\n".join(lines)
+
+
 class StockNotifier:
     def __init__(self):
         # 從環境變數讀取金鑰與 ID
@@ -55,13 +82,16 @@ class StockNotifier:
         # 🟢 Debug 訊息：方便在終端機確認 main.py 傳進來的數值
         print(f"DEBUG: notifier 正在處理 {market_name} 報告 (Stats: {stats})")
 
+        tg_summary = build_taiwan_summary(report_df, stats) if "台灣" in market_name else (
+            f"📊 <b>{market_name} 監控分析已完成</b>\n有效分析樣本：{len(report_df)} 檔"
+        )
         if not self.report_receiver_email:
             print("ℹ️ 未設定 REPORT_RECEIVER_EMAIL，依設定略過 Email 通知。")
-            tg_msg = (
-                f"📊 <b>{market_name} 監控分析已完成</b>\n"
-                f"有效分析樣本: {len(report_df)} 檔"
-            )
-            self.send_telegram(tg_msg)
+            tg_sent = self.send_telegram(tg_summary)
+            if not self.tg_token or not self.tg_chat_id:
+                print("ℹ️ Telegram 憑證未完整設定，依設定略過 Telegram 通知。")
+            elif not tg_sent:
+                print("⚠️ Telegram 通知未成功送出。")
             return True
 
         if not self.resend_api_key:
@@ -140,7 +170,21 @@ class StockNotifier:
                 </p>
         """
 
-        # --- 3. 插入九張分析矩陣圖表 ---
+        # --- 3. 插入收盤研究摘要 ---
+        if "台灣" in market_name:
+            summary_text = build_taiwan_summary(report_df, stats)
+            summary_html = "<br>".join(
+                line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                for line in summary_text.splitlines()
+            )
+            html_content += (
+                "<div style='margin:24px 0;padding:16px;border:1px solid #d9e2f0;"
+                "border-radius:8px;background:#f7faff;'>"
+                "<h3 style='margin-top:0;'>收盤研究摘要</h3>"
+                f"<div>{summary_html}</div></div>"
+            )
+
+        # --- 4. 插入九張分析矩陣圖表 ---
         html_content += "<div style='margin-top: 30px;'>"
         for img in img_data:
             html_content += f"""
@@ -200,9 +244,11 @@ class StockNotifier:
             })
             print(f"✅ {market_name} 郵件報告已寄送！")
             
-            # --- 7. 發送 Telegram 簡報 ---
-            tg_msg = f"📊 <b>{market_name} 監控報表已送達</b>\n涵蓋率: {success_rate}\n處理樣本: {success_count} 檔"
-            self.send_telegram(tg_msg)
+            # --- 7. 發送 Telegram 收盤研究摘要 ---
+            tg_msg = tg_summary + f"\n\nEmail 報告已寄送。\n資料可用率：{success_rate}"
+            tg_sent = self.send_telegram(tg_msg)
+            if self.tg_token and self.tg_chat_id and not tg_sent:
+                print("⚠️ Email 已寄送，但 Telegram 摘要通知失敗。")
             
             return True
         except Exception as e:
