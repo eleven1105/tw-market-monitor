@@ -27,6 +27,16 @@ MAX_CANDIDATES = 30
 LOOKBACK_CALENDAR_DAYS = 180
 
 
+def normalize_finmind_ticker(ticker):
+    """Convert Yahoo-style symbols (e.g. 2330.TW) to FinMind stock IDs."""
+    value = str(ticker).strip().upper()
+    if value.endswith(".TW") or value.endswith(".TWO"):
+        value = value.rsplit(".", 1)[0]
+    if not re.fullmatch(r"[0-9A-Z]+", value):
+        raise ValueError(f"unsupported FinMind stock ID: {ticker}")
+    return value
+
+
 def score_price_history(frame):
     """Return a transparent momentum/volume/liquidity score and diagnostics."""
     df = frame.copy()
@@ -85,10 +95,11 @@ def build_candidate_list(price_dir=PRICE_DIR, universe_file=UNIVERSE_FILE, limit
         raise ValueError("analysis universe has no valid market date")
     latest_date = latest.date().isoformat()
     fresh = manifest[manifest["data_date"].astype(str) == latest_date]
+    fresh_tickers = set(fresh["ticker"].astype(str))
     rows = []
     for path in sorted(Path(price_dir).glob("*.csv")):
         ticker = path.name.split("_", 1)[0]
-        if ticker not in set(fresh["ticker"].astype(str)):
+        if ticker not in fresh_tickers:
             continue
         try:
             frame = pd.read_csv(path)
@@ -101,10 +112,6 @@ def build_candidate_list(price_dir=PRICE_DIR, universe_file=UNIVERSE_FILE, limit
             print(f"SHORTLIST_SKIP {ticker}: {type(exc).__name__}: {exc}")
     rows.sort(key=lambda item: (item["score"], item["avg_turnover_20d"]), reverse=True)
     return rows[:limit]
-
-
-def _safe_cache_path(dataset, ticker):
-    return CACHE_DIR / f"{dataset}_{re.sub(r'[^0-9A-Za-z_-]', '_', ticker)}.json"
 
 
 def _read_cache(path):
@@ -125,6 +132,7 @@ def fetch_chip_data(candidates, token, cache_dir=CACHE_DIR, session=None, sleep_
     output = []
     for candidate in candidates:
         ticker = candidate["ticker"]
+        finmind_id = normalize_finmind_ticker(ticker)
         target_date = candidate["market_date"]
         for dataset in DATASETS:
             path = cache_dir / f"{dataset}_{ticker}.json"
@@ -135,7 +143,7 @@ def fetch_chip_data(candidates, token, cache_dir=CACHE_DIR, session=None, sleep_
                 output.append({"ticker": ticker, "dataset": dataset, "status": "cache",
                                "rows": len(cached_rows), "latest_date": cached_latest})
                 continue
-            params = {"dataset": dataset, "data_id": ticker,
+            params = {"dataset": dataset, "data_id": finmind_id,
                       "start_date": start_date, "end_date": target_date}
             try:
                 response = session.get(API_URL, params=params, timeout=30)
@@ -151,6 +159,7 @@ def fetch_chip_data(candidates, token, cache_dir=CACHE_DIR, session=None, sleep_
                         raise ValueError(f"missing columns: {sorted(required - columns)}")
                     with path.open("w", encoding="utf-8") as file:
                         json.dump({"dataset": dataset, "ticker": ticker,
+                                   "finmind_stock_id": finmind_id,
                                    "fetched_at": today.isoformat(), "data": rows},
                                   file, ensure_ascii=False)
                 latest = max((str(row.get("date", "")) for row in rows), default="")
@@ -182,9 +191,10 @@ def run():
     fetched = sum(item["status"] == "fetched" for item in chip_results)
     cached = sum(item["status"] == "cache" for item in chip_results)
     errors = sum(item["status"] == "error" for item in chip_results)
-    print(f"CHIP_ENRICHMENT candidates={len(candidates)} requests={fetched} cache_hits={cached} errors={errors}")
+    empty = sum(item["status"] == "empty" for item in chip_results)
+    print(f"CHIP_ENRICHMENT candidates={len(candidates)} requests={fetched} cache_hits={cached} empty={empty} errors={errors}")
     return {"candidates": len(candidates), "chip_requests": fetched,
-            "cache_hits": cached, "chip_errors": errors}
+            "cache_hits": cached, "chip_empty": empty, "chip_errors": errors}
 
 
 if __name__ == "__main__":
