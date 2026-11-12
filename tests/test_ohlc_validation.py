@@ -35,6 +35,30 @@ class ValidateRecentOhlcTests(unittest.TestCase):
         self.assertFalse(valid)
         self.assertEqual(reason, "non_numeric_or_missing")
 
+    def test_cross_section_excludes_lagging_and_undated_symbols(self):
+        from analyzer import filter_manifest_to_latest_date
+
+        manifest = pd.DataFrame({
+            "ticker": ["1111.TW", "2222.TW", "3333.TW", "4444.TW"],
+            "data_date": ["2026-11-12", "2026-11-11", "2026-11-12", ""],
+        })
+        fresh, latest, lagging, undated = filter_manifest_to_latest_date(manifest)
+
+        self.assertEqual(latest, "2026-11-12")
+        self.assertEqual(set(fresh["ticker"]), {"1111.TW", "3333.TW"})
+        self.assertEqual(lagging, ["2222.TW"])
+        self.assertEqual(undated, ["4444.TW"])
+
+    def test_manifest_with_no_valid_dates_fails_closed(self):
+        from analyzer import filter_manifest_to_latest_date
+
+        manifest = pd.DataFrame({
+            "ticker": ["1111.TW", "2222.TW"],
+            "data_date": ["", None],
+        })
+        with self.assertRaises(ValueError):
+            filter_manifest_to_latest_date(manifest)
+
     def test_ignores_anomaly_outside_250_day_analysis_window(self):
         prices = pd.DataFrame({
             "close": [5.0] + [10.0] * 251,
