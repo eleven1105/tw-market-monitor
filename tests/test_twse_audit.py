@@ -71,12 +71,25 @@ class TwseAuditTests(unittest.TestCase):
         ]
         from twse_audit import audit_twse_symbols
 
-        result = audit_twse_symbols(
-            ["1234.TW"],
-            expected_date="2026-11-12",
-            target_bars={"1234.TW": {"date": "2026-10-15", "close": 8.0, "high": 9.0, "low": 8.5}},
-        )
+        from contextlib import redirect_stdout
+        from io import StringIO
+
+        output = StringIO()
+        with redirect_stdout(output):
+            result = audit_twse_symbols(
+                ["1234.TW"],
+                expected_date="2026-11-12",
+                target_bars={"1234.TW": {
+                    "date": "2026-10-15",
+                    "open": 8.2,
+                    "close": 8.0,
+                    "high": 9.0,
+                    "low": 8.5,
+                }},
+            )
         self.assertEqual(result["1234.TW"]["target"]["date"], "2026-10-15")
+        self.assertIn("本機 Yahoo OHLC=8.2/9.0/8.5/8.0", output.getvalue())
+        self.assertIn("TWSE 原始 OHLC=10.0/11.0/9.0/10.5", output.getvalue())
         self.assertEqual(fetch_month.call_count, 2)
 
 
