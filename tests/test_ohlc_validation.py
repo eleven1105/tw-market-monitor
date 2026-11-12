@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from analyzer import validate_recent_ohlc
+from analyzer import validate_recent_ohlc, validate_history_dates
 
 
 class ValidateRecentOhlcTests(unittest.TestCase):
@@ -66,6 +66,45 @@ class ValidateRecentOhlcTests(unittest.TestCase):
             "low": [6.0] + [9.0] * 251,
         })
         self.assertEqual(validate_recent_ohlc(prices, lookback=251), (True, None))
+
+
+    def test_history_dates_match_manifest_and_sort_chronologically(self):
+        frame = pd.DataFrame({
+            "date": ["2026-11-12", "2026-11-11"],
+            "close": [12.0, 11.0],
+        })
+        valid, reason, normalized = validate_history_dates(
+            frame, expected_latest_date="2026-11-12"
+        )
+        self.assertTrue(valid)
+        self.assertIsNone(reason)
+        self.assertEqual(normalized["date"].tolist(), ["2026-11-11", "2026-11-12"])
+
+    def test_history_date_mismatch_is_rejected(self):
+        frame = pd.DataFrame({"date": ["2026-11-11"], "close": [11.0]})
+        valid, reason, _ = validate_history_dates(
+            frame, expected_latest_date="2026-11-12"
+        )
+        self.assertFalse(valid)
+        self.assertIn("latest_date_mismatch", reason)
+
+    def test_duplicate_recent_trading_date_is_rejected(self):
+        frame = pd.DataFrame({
+            "date": ["2026-11-11", "2026-11-11"],
+            "close": [11.0, 11.2],
+        })
+        valid, reason, _ = validate_history_dates(frame)
+        self.assertFalse(valid)
+        self.assertEqual(reason, "duplicate_recent_trading_date")
+
+    def test_missing_recent_date_is_rejected(self):
+        frame = pd.DataFrame({
+            "date": ["2026-11-11", None],
+            "close": [11.0, 11.2],
+        })
+        valid, reason, _ = validate_history_dates(frame)
+        self.assertFalse(valid)
+        self.assertEqual(reason, "missing_or_invalid_recent_date")
 
 
 if __name__ == "__main__":
