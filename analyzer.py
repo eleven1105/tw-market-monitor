@@ -328,7 +328,9 @@ def run_global_analysis(market_id="tw-share"):
                                     None,
                                 )
                                 if official_bar:
-                                    local_values = prices.iloc[source_index]
+                                    # Copy before any DataFrame mutation so the audit log
+                                    # preserves the true vendor value being replaced.
+                                    local_values = prices.iloc[source_index].copy()
                                     official_low = reconcile_official_low(
                                         local_values["high"],
                                         local_values["low"],
@@ -415,7 +417,7 @@ def run_global_analysis(market_id="tw-share"):
                     "low": pd.to_numeric(fields.get("low"), errors="coerce"),
                     "close": pd.to_numeric(fields.get("close"), errors="coerce"),
                 }
-        print("🔎 使用 TWSE 官方原始日成交資料查核 OHLC 異常標的（精確異常日期比對；僅診斷，不自動改價）")
+        print("🔎 使用 TWSE 官方原始日成交資料查核未修復 OHLC 異常標的（精確異常日期比對；不自動改價）")
         audit_twse_symbols(
             invalid_tickers,
             expected_date=latest_manifest_date,
