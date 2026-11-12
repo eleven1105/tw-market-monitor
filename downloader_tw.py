@@ -54,6 +54,13 @@ def latest_observed_date(valid_rows):
     return max(dated_rows) if dated_rows else None
 
 
+def should_replace_history(cached_latest, fetched_latest):
+    """Never overwrite a newer local history with an older vendor response."""
+    return fetched_latest is not None and (
+        cached_latest is None or fetched_latest >= cached_latest
+    )
+
+
 def select_lagging_rows(valid_rows):
     """Select cached symbols behind the freshest date observed in this batch."""
     latest_date = latest_observed_date(valid_rows)
@@ -101,7 +108,7 @@ def download_stock_data(row, force_refresh=False):
                     if pd.isna(latest_date):
                         return {"status": "error", "ticker": ticker, "name": name}
                     fetched_date = latest_date.date()
-                    if cached_latest and fetched_date < cached_latest:
+                    if not should_replace_history(cached_latest, fetched_date):
                         return {
                             "status": "stale", "ticker": ticker, "name": name,
                             "latest_data_date": fetched_date.isoformat(),
@@ -137,7 +144,7 @@ def main():
     rows = universe[["ticker", "name"]].to_dict("records")
     log(f"🚀 僅下載證交所上市普通股，共 {len(rows)} 檔")
 
-    stats = {"success": 0, "exists": 0, "empty": 0, "error": 0, "stale_refresh": 0}
+    stats = {"success": 0, "exists": 0, "empty": 0, "error": 0, "stale": 0, "stale_refresh": 0}
     valid_rows = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = [executor.submit(download_stock_data, row) for row in rows]
@@ -145,7 +152,7 @@ def main():
         for future in as_completed(futures):
             result = future.result()
             stats[result["status"]] += 1
-            if result["status"] in ("success", "exists"):
+            if result["status"] in ("success", "exists", "stale"):
                 latest_data_date = result.get("latest_data_date") or _latest_csv_date(
                     DATA_DIR / f"{result['ticker']}_{''.join(c for c in str(result['name']) if c.isalnum() or c in (' ', '_', '-')).strip()}.csv"
                 )
@@ -232,7 +239,7 @@ def main():
 
     report = {
         "total": len(rows),
-        "success": stats["success"] + stats["exists"],
+        "success": stats["success"] + stats["exists"] + stats["stale"],
         "fail": stats["error"] + stats["empty"],
     }
     log(f"📊 台股下載完成：{report}；明細：{stats}")
