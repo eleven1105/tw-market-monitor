@@ -115,7 +115,7 @@ def filter_manifest_to_latest_date(manifest):
     return fresh_manifest, latest_date, lagging, undated
 
 
-def validate_recent_ohlc(prices, lookback=251, relative_tolerance=1e-8, absolute_tolerance=1e-8):
+def validate_recent_ohlc(prices, lookback=251, relative_tolerance=1e-8, absolute_tolerance=1e-8, dates=None):
     """Validate OHLC relationships only in the observations used by 5/20/250-day metrics.
 
     Yahoo adjusted prices can differ by a few floating-point ulps. A scale-aware
@@ -128,7 +128,17 @@ def validate_recent_ohlc(prices, lookback=251, relative_tolerance=1e-8, absolute
 
     values = recent[["close", "high", "low"]].to_numpy(dtype=float)
     if not np.isfinite(values).all():
-        return False, "non_numeric_or_missing"
+        invalid_rows = np.flatnonzero(~np.isfinite(values).all(axis=1))
+        idx = int(invalid_rows[0])
+        source_index = len(prices) - len(recent) + idx
+        date_value = "unknown"
+        if dates is not None and source_index < len(dates):
+            date_value = dates.iloc[source_index] if hasattr(dates, "iloc") else dates[source_index]
+        close_value, high_value, low_value = values[idx].tolist()
+        return False, (
+            f"non_numeric_or_missing; recent_row={idx}; date={date_value}; "
+            f"close={close_value}; high={high_value}; low={low_value}"
+        )
     if (values <= 0).any():
         return False, "non_positive_price"
 
@@ -271,7 +281,14 @@ def run_global_analysis(market_id="tw-share"):
                 continue
 
             prices = df[["close", "high", "low"]].apply(pd.to_numeric, errors="coerce")
-            valid_ohlc, ohlc_reason = validate_recent_ohlc(prices, lookback=251)
+            date_column = next(
+                (column for column in ("date", "datetime") if column in df.columns),
+                None,
+            )
+            history_dates = df[date_column] if date_column else None
+            valid_ohlc, ohlc_reason = validate_recent_ohlc(
+                prices, lookback=251, dates=history_dates
+            )
             if not valid_ohlc:
                 # Preserve the raw vendor values for diagnosis. Never silently
                 # clamp or rewrite OHLC prices because that would fabricate market data.

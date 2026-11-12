@@ -1,6 +1,6 @@
 import unittest
 
-from downloader_tw import latest_observed_date, select_lagging_rows, should_replace_history
+from downloader_tw import build_download_report, latest_observed_date, select_lagging_rows, should_replace_history
 
 
 class SelectLaggingRowsTests(unittest.TestCase):
@@ -30,6 +30,19 @@ class SelectLaggingRowsTests(unittest.TestCase):
         self.assertTrue(should_replace_history(date(2026, 11, 11), date(2026, 11, 12)))
         self.assertTrue(should_replace_history(None, date(2026, 11, 12)))
         self.assertFalse(should_replace_history(date(2026, 11, 12), None))
+
+    def test_download_report_separates_available_from_current_date(self):
+        stats = {"success": 2, "exists": 6, "stale": 0, "error": 0, "empty": 0, "stale_refresh": 2}
+        rows = [
+            {"ticker": "1111.TW", "data_date": "2026-11-12"},
+            {"ticker": "2222.TW", "data_date": "2026-11-12"},
+            {"ticker": "3333.TW", "data_date": "2026-11-11"},
+        ]
+        report = build_download_report(9, stats, rows)
+        self.assertEqual(report["success"], 8)
+        self.assertEqual(report["current_date"], 2)
+        self.assertEqual(report["stale_date"], 1)
+        self.assertEqual(report["latest_data_date"], "2026-11-12")
 
     def test_latest_observed_date_is_available_for_refresh_log(self):
         rows = [

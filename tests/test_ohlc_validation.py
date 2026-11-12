@@ -33,7 +33,21 @@ class ValidateRecentOhlcTests(unittest.TestCase):
         })
         valid, reason = validate_recent_ohlc(prices)
         self.assertFalse(valid)
-        self.assertEqual(reason, "non_numeric_or_missing")
+        self.assertIn("non_numeric_or_missing", reason)
+        self.assertIn("recent_row=1", reason)
+        self.assertIn("date=unknown", reason)
+
+    def test_missing_ohlc_reports_exact_date_for_official_audit(self):
+        prices = pd.DataFrame({
+            "close": [10.0, np.nan],
+            "high": [11.0, 12.0],
+            "low": [9.0, 10.0],
+        })
+        dates = pd.Series(["2026-11-11", "2026-11-12"])
+        valid, reason = validate_recent_ohlc(prices, dates=dates)
+        self.assertFalse(valid)
+        self.assertIn("recent_row=1", reason)
+        self.assertIn("date=2026-11-12", reason)
 
     def test_cross_section_excludes_lagging_and_undated_symbols(self):
         from analyzer import filter_manifest_to_latest_date

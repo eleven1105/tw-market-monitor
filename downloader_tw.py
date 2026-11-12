@@ -72,6 +72,24 @@ def select_lagging_rows(valid_rows):
     ]
 
 
+
+def build_download_report(total, stats, valid_rows):
+    """Separate locally available history from rows matching the latest market date."""
+    latest_date = latest_observed_date(valid_rows)
+    current_date_count = sum(
+        1 for row in valid_rows if latest_date and row.get("data_date") == latest_date
+    )
+    available_count = stats["success"] + stats["exists"] + stats["stale"]
+    return {
+        "total": total,
+        "success": available_count,
+        "fail": stats["error"] + stats["empty"],
+        "latest_data_date": latest_date,
+        "current_date": current_date_count,
+        "stale_date": max(0, len(valid_rows) - current_date_count),
+        "stale_refresh": stats.get("stale_refresh", 0),
+    }
+
 def download_stock_data(row, force_refresh=False):
     ticker, name = row["ticker"], row["name"]
     safe_name = "".join(
@@ -241,11 +259,7 @@ def main():
         if missing_dates:
             log(f"⚠️ 白名單中有 {missing_dates} 檔缺少行情日期，後續需排除")
 
-    report = {
-        "total": len(rows),
-        "success": stats["success"] + stats["exists"] + stats["stale"],
-        "fail": stats["error"] + stats["empty"],
-    }
+    report = build_download_report(len(rows), stats, valid_rows)
     log(f"📊 台股下載完成：{report}；明細：{stats}")
     return report
 

@@ -7,6 +7,7 @@ on:
       - maintenance/refresh-lagging-and-ohlc-audit-2026-11-12
       - maintenance/fix-latest-observed-nameerror-2026-11-12
       - maintenance/official-twse-audit-2026-11-12
+      - maintenance/accurate-freshness-and-missing-bar-audit-2026-11-12
   pull_request:
     branches:
       - research/tw-listed-common-stocks
