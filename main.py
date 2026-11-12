@@ -70,6 +70,17 @@ def run_market_pipeline(market_id, market_name, emoji):
         print("❌ 本次台股下載未建立有效股票池或沒有成功資料，停止分析與寄信。")
         raise RuntimeError("Taiwan universe/download validation failed")
 
+    # Enrich only a bounded technical shortlist with FinMind chip data.
+    # This stage is deliberately non-blocking: price analysis and reporting
+    # must continue if chip API credentials or service are unavailable.
+    if market_id == "tw-share":
+        try:
+            import candidate_chip_pipeline
+            chip_summary = candidate_chip_pipeline.run()
+            print(f"📌 波段候選股／籌碼摘要：{chip_summary}")
+        except Exception as exc:
+            print(f"⚠️ 候選股籌碼補充程序失敗，不影響主要行情分析：{type(exc).__name__}: {exc}")
+
     # --- Step 2: 數據分析 & 繪圖 ---
     print(f"\n【Step 2: 矩陣分析】正在計算 {market_name} 動能分布並生成圖表...")
     try:
