@@ -29,6 +29,8 @@ class CandidateChipPipelineTests(unittest.TestCase):
 
     def test_uses_cache_without_network_calls(self):
         class NoNetwork:
+            headers = {}
+
             def get(self, *args, **kwargs):
                 raise AssertionError("cache hit should not call network")
         with tempfile.TemporaryDirectory() as tmp:
