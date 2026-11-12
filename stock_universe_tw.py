@@ -34,7 +34,7 @@ def fetch_listed_common_stocks():
         raise ValueError("TWSE ISIN returned no tables")
 
     frame = tables[0]
-    required = {"有價證券代號", "有價證券名稱"}
+    required = {"有價證券代號", "有價證券名稱", "市場別", "有價證券別", "CFICode"}
     if not required.issubset(frame.columns):
         missing = ", ".join(sorted(required - set(frame.columns)))
         raise ValueError(f"TWSE ISIN schema changed; missing: {missing}")
@@ -43,7 +43,13 @@ def fetch_listed_common_stocks():
     for _, row in frame.iterrows():
         code = str(row["有價證券代號"]).strip()
         name = str(row["有價證券名稱"]).strip()
+        market = str(row["市場別"]).strip()
+        security_type = str(row["有價證券別"]).strip()
+        cfi_code = str(row["CFICode"]).strip().upper()
         if not (code.isdigit() and len(code) == 4 and name and name != "nan"):
+            continue
+        # ESVUFR is the CFI classification for ordinary/common shares.
+        if market != "上市" or security_type != "股票" or cfi_code != "ESVUFR":
             continue
         if any(marker in name for marker in EXCLUDED_NAME_MARKERS):
             continue
