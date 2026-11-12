@@ -92,6 +92,44 @@ class TwseAuditTests(unittest.TestCase):
         self.assertIn("TWSE 原始 OHLC=10.0/11.0/9.0/10.5", output.getvalue())
         self.assertEqual(fetch_month.call_count, 2)
 
+    def test_classifies_vendor_lag_when_official_bar_exists_but_local_is_missing(self):
+        from twse_audit import classify_market_data_status
+        result = classify_market_data_status({'date': '2026-11-12'}, None)
+        self.assertEqual(result['classification'], 'vendor_bar_missing_or_stale')
+
+    def test_classifies_incomplete_local_ohlc_without_weakening_validation(self):
+        from twse_audit import classify_market_data_status
+        result = classify_market_data_status(
+            {'date': '2026-11-12'},
+            {'date': '2026-11-12', 'open': None, 'high': 10, 'low': 9, 'close': 9.5},
+        )
+        self.assertEqual(result['classification'], 'vendor_bar_incomplete')
+
+    def test_missing_official_bar_is_unknown_without_exchange_evidence(self):
+        from twse_audit import classify_market_data_status
+        result = classify_market_data_status(None, {'date': '2026-11-12'})
+        self.assertEqual(result['classification'], 'unknown_no_official_bar')
+
+    def test_suspension_requires_explicit_exchange_confirmation(self):
+        from twse_audit import classify_market_data_status
+        result = classify_market_data_status(None, exchange_suspended=True)
+        self.assertEqual(result['classification'], 'confirmed_suspension')
+
+    def test_zero_volume_requires_confirmed_open_session(self):
+        from twse_audit import classify_market_data_status
+        local = {'date': '2026-11-12', 'volume': 0}
+        unknown = classify_market_data_status(None, local)
+        no_trade = classify_market_data_status(None, local, exchange_open=True)
+        self.assertEqual(unknown['classification'], 'unknown_no_official_bar')
+        self.assertEqual(no_trade['classification'], 'zero_volume_no_trade')
+
+    def test_incomplete_local_row_without_official_bar_is_not_mislabelled_as_suspension(self):
+        from twse_audit import classify_market_data_status
+        result = classify_market_data_status(
+            None,
+            {'date': '2026-11-12', 'open': None, 'high': None, 'low': None, 'close': None},
+        )
+        self.assertEqual(result['classification'], 'local_bar_incomplete_official_absent')
 
 if __name__ == "__main__":
     unittest.main()
