@@ -33,6 +33,8 @@ class PointInTimePanelTests(unittest.TestCase):
             panel = build_symbol_panel("2330.TW", "test", prices, chips)
             self.assertEqual(len(panel), 25)
             self.assertAlmostEqual(panel.loc[20, "institutional_net_5d"], 750)
+            self.assertTrue(pd.isna(panel.loc[3, "institutional_alignment_5d"]))
+            self.assertEqual(panel.loc[4, "institutional_alignment_5d"], 3)
             self.assertAlmostEqual(panel.loc[20, "margin_balance_change_5d"], 5)
             self.assertAlmostEqual(panel.loc[0, "forward_return_1d"], 0.01)
             self.assertTrue(pd.isna(panel.loc[24, "forward_return_1d"]))
