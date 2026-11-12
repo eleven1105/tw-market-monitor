@@ -123,5 +123,13 @@ class TwseAuditTests(unittest.TestCase):
         self.assertEqual(unknown['classification'], 'unknown_no_official_bar')
         self.assertEqual(no_trade['classification'], 'zero_volume_no_trade')
 
+    def test_incomplete_local_row_without_official_bar_is_not_mislabelled_as_suspension(self):
+        from twse_audit import classify_market_data_status
+        result = classify_market_data_status(
+            None,
+            {'date': '2026-11-12', 'open': None, 'high': None, 'low': None, 'close': None},
+        )
+        self.assertEqual(result['classification'], 'local_bar_incomplete_official_absent')
+
 if __name__ == "__main__":
     unittest.main()
