@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from analyzer import validate_recent_ohlc, validate_history_dates
+from analyzer import validate_recent_ohlc, validate_history_dates, can_replace_with_official_bar
 
 
 class ValidateRecentOhlcTests(unittest.TestCase):
@@ -56,6 +56,27 @@ class ValidateRecentOhlcTests(unittest.TestCase):
         self.assertFalse(valid)
         self.assertIn("recent_row=1", reason)
         self.assertIn("date=2026-11-12", reason)
+
+
+    def test_full_bar_replacement_accepts_partial_missing_when_surviving_open_matches(self):
+        vendor = {"open": 43.0, "high": np.nan, "low": np.nan, "close": np.nan}
+        official = {"open": 43.0, "high": 43.0, "low": 42.1, "close": 43.0}
+        self.assertTrue(can_replace_with_official_bar(vendor, official))
+
+    def test_full_bar_replacement_rejects_surviving_vendor_value_mismatch(self):
+        vendor = {"open": 44.0, "high": np.nan, "low": np.nan, "close": np.nan}
+        official = {"open": 43.0, "high": 43.0, "low": 42.1, "close": 43.0}
+        self.assertFalse(can_replace_with_official_bar(vendor, official))
+
+    def test_full_bar_replacement_rejects_complete_vendor_bar(self):
+        vendor = {"open": 43.0, "high": 43.0, "low": 42.1, "close": 43.0}
+        official = {"open": 43.0, "high": 43.0, "low": 42.1, "close": 43.0}
+        self.assertFalse(can_replace_with_official_bar(vendor, official))
+
+    def test_full_bar_replacement_rejects_invalid_official_bar(self):
+        vendor = {"open": 43.0, "high": np.nan, "low": np.nan, "close": np.nan}
+        official = {"open": 43.0, "high": 41.0, "low": 42.1, "close": 43.0}
+        self.assertFalse(can_replace_with_official_bar(vendor, official))
 
     def test_cross_section_excludes_lagging_and_undated_symbols(self):
         from analyzer import filter_manifest_to_latest_date
