@@ -57,6 +57,8 @@ def run_market_pipeline(market_id, market_name, emoji):
 
     except Exception as e:
         print(f"❌ {market_name} 數據下載過程發生嚴重異常: {e}")
+        if market_id == "tw-share":
+            raise RuntimeError("Taiwan data download failed; workflow must fail") from e
 
     # Fail closed for Taiwan: never analyze restored CSVs if the current
     # universe could not be fetched or no current-run data was validated.
@@ -76,6 +78,8 @@ def run_market_pipeline(market_id, market_name, emoji):
         
         if report_df is None or report_df.empty:
             print(f"⚠️ {market_name} 分析結果為空 (可能是 CSV 資料不足)，跳過寄信步驟。")
+            if market_id == "tw-share":
+                raise RuntimeError("Taiwan analysis produced no valid rows")
             return
         
         print(f"✅ 分析完成！成功處理 {len(report_df)} 檔有效數據。")
@@ -96,9 +100,13 @@ def run_market_pipeline(market_id, market_name, emoji):
             print(f"✅ {market_name} 監控報告已成功寄達！")
         else:
             print(f"❌ {market_name} 報告寄送失敗 (請檢查 API Key 或日誌)。")
+            if market_id == "tw-share":
+                raise RuntimeError("Taiwan report delivery failed")
 
     except Exception as e:
         print(f"❌ {market_name} 分析或寄信過程出錯:\n{traceback.format_exc()}")
+        if market_id == "tw-share":
+            raise
 
 def main():
     parser = argparse.ArgumentParser(description="Global Stock Monitor Orchestrator")
