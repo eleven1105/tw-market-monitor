@@ -372,8 +372,11 @@ def run_global_analysis(market_id="tw-share"):
                                     )
                                     if vendor_bar_incomplete:
                                         for column, value in official_values.items():
+                                            if column not in df.columns:
+                                                df[column] = np.nan
                                             df.iloc[source_index, df.columns.get_loc(column)] = float(value)
-                                            prices.iloc[source_index, prices.columns.get_loc(column)] = float(value)
+                                            if column in prices.columns:
+                                                prices.iloc[source_index, prices.columns.get_loc(column)] = float(value)
                                         df.to_csv(f, index=False, encoding="utf-8-sig")
                                         valid_ohlc, ohlc_reason = validate_recent_ohlc(
                                             prices, lookback=251, dates=history_dates
