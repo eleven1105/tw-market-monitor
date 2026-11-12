@@ -98,19 +98,30 @@ def build_symbol_panel(ticker, name, price_dir=PRICE_DIR, chip_dir=CHIP_DIR):
             part = inst[inst["investor"] == bucket].groupby("date")["net"].sum()
             daily[f"{bucket}_net_daily"] = part
         daily = daily.sort_index()
-        daily["institutional_net_5d"] = daily["institutional_net_daily"].rolling(5, min_periods=5).sum()
-        daily["institutional_net_20d"] = daily["institutional_net_daily"].rolling(20, min_periods=20).sum()
         for bucket in ("foreign", "trust", "dealer"):
             col = f"{bucket}_net_daily"
+            # A missing investor category on a date with other institutional
+            # records means zero net flow for that category; a date with no
+            # institutional records at all remains missing after the join.
             daily[col] = daily[col].fillna(0)
-            daily[f"{bucket}_net_5d"] = daily[col].rolling(5, min_periods=5).sum()
-            daily[f"{bucket}_net_20d"] = daily[col].rolling(20, min_periods=20).sum()
+        price = price.merge(daily.reset_index(), on="date", how="left")
+        # Compute rolling features only after aligning to the full price trading
+        # calendar. This prevents missing chip dates from silently shortening
+        # the lookback window and masquerading as consecutive sessions.
+        for bucket in ("foreign", "trust", "dealer"):
+            col = f"{bucket}_net_daily"
+            price[col] = price[col].where(price["institutional_net_daily"].notna())
+        price["institutional_net_5d"] = price["institutional_net_daily"].rolling(5, min_periods=5).sum()
+        price["institutional_net_20d"] = price["institutional_net_daily"].rolling(20, min_periods=20).sum()
+        for bucket in ("foreign", "trust", "dealer"):
+            col = f"{bucket}_net_daily"
+            price[f"{bucket}_net_5d"] = price[col].rolling(5, min_periods=5).sum()
+            price[f"{bucket}_net_20d"] = price[col].rolling(20, min_periods=20).sum()
         directions = pd.concat(
-            [(daily[f"{b}_net_5d"] > 0).astype("Int64") for b in ("foreign", "trust", "dealer")],
+            [(price[f"{b}_net_5d"] > 0).astype("Int64") for b in ("foreign", "trust", "dealer")],
             axis=1,
         )
-        daily["institutional_alignment_5d"] = directions.sum(axis=1, min_count=1)
-        price = price.merge(daily.reset_index(), on="date", how="left")
+        price["institutional_alignment_5d"] = directions.sum(axis=1, min_count=1)
     else:
         for col in ("institutional_net_daily", "institutional_net_5d", "institutional_net_20d",
                     "foreign_net_daily", "foreign_net_5d", "foreign_net_20d",
@@ -124,9 +135,10 @@ def build_symbol_panel(ticker, name, price_dir=PRICE_DIR, chip_dir=CHIP_DIR):
         margin["margin_balance"] = pd.to_numeric(margin["MarginPurchaseTodayBalance"], errors="coerce")
         margin = margin.dropna(subset=["date", "margin_balance"]).sort_values("date")
         margin = margin.groupby("date")["margin_balance"].last().to_frame()
-        margin["margin_balance_change_5d"] = margin["margin_balance"].diff(5)
-        margin["margin_balance_change_20d"] = margin["margin_balance"].diff(20)
         price = price.merge(margin.reset_index(), on="date", how="left")
+        # Difference on the price calendar, not on compressed vendor rows.
+        price["margin_balance_change_5d"] = price["margin_balance"].diff(5)
+        price["margin_balance_change_20d"] = price["margin_balance"].diff(20)
     else:
         for col in ("margin_balance", "margin_balance_change_5d", "margin_balance_change_20d"):
             price[col] = pd.NA
