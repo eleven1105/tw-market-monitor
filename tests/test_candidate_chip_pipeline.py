@@ -90,6 +90,9 @@ class CandidateChipPipelineTests(unittest.TestCase):
         self.assertEqual(result["institutional_net_5d"], 3000)
         self.assertEqual(result["institutional_net_20d"], 12000)
         self.assertEqual(result["institutional_positive_days_5d"], 5)
+        self.assertEqual(result["foreign_net_5d"], 3000)
+        self.assertIsNone(result["trust_net_5d"])
+        self.assertEqual(result["institutional_alignment_5d"], "1/1")
         self.assertEqual(result["margin_balance_change_5d"], 50)
         self.assertGreaterEqual(result["chip_score"], 80)
 
@@ -97,6 +100,22 @@ class CandidateChipPipelineTests(unittest.TestCase):
         result = score_chip_history([], [], "2026-11-12")
         self.assertEqual(result["chip_data_status"], "unavailable")
         self.assertIsNone(result["chip_score"])
+
+    def test_institutional_alignment_shows_three_way_disagreement(self):
+        inst = []
+        for day in range(1, 7):
+            inst.extend([
+                {"date": f"2026-10-{day:02d}", "name": "Foreign_Investor", "buy": 120, "sell": 100},
+                {"date": f"2026-10-{day:02d}", "name": "Investment_Trust", "buy": 80, "sell": 100},
+                {"date": f"2026-10-{day:02d}", "name": "Dealer_self", "buy": 90, "sell": 100},
+            ])
+        margin = [{"date": f"2026-10-{day:02d}", "MarginPurchaseTodayBalance": 1000}
+                  for day in range(1, 7)]
+        result = score_chip_history(inst, margin, "2026-10-06")
+        self.assertEqual(result["foreign_net_5d"], 100)
+        self.assertEqual(result["trust_net_5d"], -100)
+        self.assertEqual(result["dealer_net_5d"], -50)
+        self.assertEqual(result["institutional_alignment_5d"], "1/3")
 
 
 if __name__ == "__main__":
