@@ -155,8 +155,8 @@ def run_global_analysis(market_id="tw-share"):
             if not required.issubset(df.columns):
                 skipped["missing_columns"].append(tkr)
                 continue
-            if len(df) < 21:
-                skipped["insufficient_history"].append(f"{tkr}({len(df)} rows)")
+            if len(df) < 6:
+                skipped["insufficient_history"].append(f"{tkr}({len(df)} rows; need >=6 for 5-day return)")
                 continue
 
             prices = df[["close", "high", "low"]].apply(pd.to_numeric, errors="coerce")
