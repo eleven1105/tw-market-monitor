@@ -88,6 +88,35 @@ def fetch_official_month_bars(ticker, month_date=None, timeout=15):
     return {"status": "ok", "bars": bars}
 
 
+
+def reconcile_official_low(local_high, local_low, local_close, official_bar, tolerance=1e-4):
+    """Return an official low only when local high and close independently match TWSE.
+
+    This narrowly repairs a bad low field; it never replaces an entire OHLC bar or
+    mixes raw exchange prices into a differently adjusted vendor series.
+    """
+    try:
+        high = float(local_high)
+        low = float(local_low)
+        close = float(local_close)
+        official_high = float(official_bar["high"])
+        official_low = float(official_bar["low"])
+        official_close = float(official_bar["close"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+    if not all(map(lambda value: value > 0, (
+        high, low, close, official_high, official_low, official_close
+    ))):
+        return None
+    if not (official_high >= official_close >= official_low):
+        return None
+    if abs(high - official_high) > tolerance or abs(close - official_close) > tolerance:
+        return None
+    if close >= low or low <= official_low:
+        return None
+    return official_low
+
 def audit_twse_symbols(tickers, expected_date=None, target_bars=None):
     """Compare exact flagged dates with TWSE raw bars; diagnostics only, never rewrite prices."""
     results = {}
