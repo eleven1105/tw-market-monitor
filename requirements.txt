@@ -5,6 +5,8 @@ matplotlib
 
 # --- 數據獲取 (核心) ---
 yfinance
+requests
+lxml
 tqdm
 resend
 
