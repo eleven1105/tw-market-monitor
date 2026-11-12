@@ -19,6 +19,13 @@ MARGIN = "TaiwanStockMarginPurchaseShortSale"
 HORIZONS = (1, 3, 5, 10, 20)
 
 
+def _normalize_dates(values):
+    # yfinance may emit Asia/Taipei-aware timestamps while FinMind dates are
+    # timezone-naive strings. Normalize all three datasets to naive UTC dates
+    # after converting their instant, then compare calendar trading dates.
+    return pd.to_datetime(values, errors="coerce", utc=True).dt.tz_convert("Asia/Taipei").dt.tz_localize(None).dt.normalize()
+
+
 def _load_json_rows(path):
     try:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -63,7 +70,7 @@ def build_symbol_panel(ticker, name, price_dir=PRICE_DIR, chip_dir=CHIP_DIR):
     date_col = next((c for c in ("date", "datetime") if c in price.columns), None)
     if date_col is None or "close" not in price.columns:
         raise ValueError(f"price CSV for {ticker} needs date and close")
-    price["date"] = pd.to_datetime(price[date_col], errors="coerce").dt.normalize()
+    price["date"] = _normalize_dates(price[date_col])
     price["close"] = pd.to_numeric(price["close"], errors="coerce")
     price = price.dropna(subset=["date", "close"]).query("close > 0")
     price = price.sort_values("date").drop_duplicates("date", keep="last")
@@ -77,7 +84,7 @@ def build_symbol_panel(ticker, name, price_dir=PRICE_DIR, chip_dir=CHIP_DIR):
     margin = pd.DataFrame(_load_json_rows(margin_path))
 
     if not inst.empty and {"date", "buy", "sell"}.issubset(inst.columns):
-        inst["date"] = pd.to_datetime(inst["date"], errors="coerce").dt.normalize()
+        inst["date"] = _normalize_dates(inst["date"])
         inst["buy"] = pd.to_numeric(inst["buy"], errors="coerce")
         inst["sell"] = pd.to_numeric(inst["sell"], errors="coerce")
         inst = inst.dropna(subset=["date", "buy", "sell"])
@@ -113,7 +120,7 @@ def build_symbol_panel(ticker, name, price_dir=PRICE_DIR, chip_dir=CHIP_DIR):
             price[col] = pd.NA
 
     if not margin.empty and {"date", "MarginPurchaseTodayBalance"}.issubset(margin.columns):
-        margin["date"] = pd.to_datetime(margin["date"], errors="coerce").dt.normalize()
+        margin["date"] = _normalize_dates(margin["date"])
         margin["margin_balance"] = pd.to_numeric(margin["MarginPurchaseTodayBalance"], errors="coerce")
         margin = margin.dropna(subset=["date", "margin_balance"]).sort_values("date")
         margin = margin.groupby("date")["margin_balance"].last().to_frame()

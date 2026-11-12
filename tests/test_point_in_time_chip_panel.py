@@ -14,7 +14,7 @@ class PointInTimePanelTests(unittest.TestCase):
             root = Path(tmp); prices = root / "prices"; chips = root / "chips"
             prices.mkdir(); chips.mkdir()
             pd.DataFrame({
-                "Date": pd.date_range("2026-01-01", periods=25, freq="B"),
+                "Date": pd.date_range("2026-01-01", periods=25, freq="B", tz="Asia/Taipei"),
                 "Close": list(range(100, 125)),
             }).to_csv(prices / "2330_test.csv", index=False)
             dates = pd.date_range("2026-01-01", periods=25, freq="B")
