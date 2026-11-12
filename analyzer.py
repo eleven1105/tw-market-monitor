@@ -138,39 +138,61 @@ def run_global_analysis(market_id="tw-share"):
         print(f"🔒 台股分析白名單：{len(allowed)} 檔；符合 CSV：{len(all_files)} 檔")
 
     results = []
+    skipped = {"insufficient_history": [], "missing_columns": [], "invalid_ohlc": [], "read_or_parse_error": []}
     for f in tqdm(all_files, desc=f"分析 {market_label} 數據"):
+        stem = f.name.replace(".csv", "")
+        if market_id in ["hk-share", "jp-share", "kr-share"]:
+            tkr, nm = stem, stem
+        elif "_" in stem:
+            tkr, nm = stem.split("_", 1)
+        else:
+            tkr, nm = stem, stem
+
         try:
             df = pd.read_csv(f)
-            if len(df) < 20: continue
-            df.columns = [c.lower() for c in df.columns]
-            close, high, low = df['close'].values, df['high'].values, df['low'].values
-            
-            # 解析代號與名稱
-            stem = f.name.replace(".csv", "")
-            
-            # 多國檔名解析策略
-            if market_id in ["hk-share", "jp-share", "kr-share"]:
-                # 港日韓多為單一代號格式 (如 7203.T.csv 或 005930.KS.csv)
-                tkr = stem
-                nm = stem
-            elif "_" in stem:
-                # 台、美、中 (如 AAPL_Apple.csv 或 600519_貴州茅台.csv)
-                tkr, nm = stem.split('_', 1)
-            else:
-                tkr, nm = stem, stem
-                
-            row = {'Ticker': tkr, 'Full_Name': nm}
-            
-            periods = [('Week', 5), ('Month', 20), ('Year', 250)]
+            df.columns = [str(col).lower() for col in df.columns]
+            required = {"close", "high", "low"}
+            if not required.issubset(df.columns):
+                skipped["missing_columns"].append(tkr)
+                continue
+            if len(df) < 21:
+                skipped["insufficient_history"].append(f"{tkr}({len(df)} rows)")
+                continue
+
+            prices = df[["close", "high", "low"]].apply(pd.to_numeric, errors="coerce")
+            if prices.isna().any().any() or not np.isfinite(prices.to_numpy()).all():
+                skipped["invalid_ohlc"].append(f"{tkr}(non_numeric_or_missing)")
+                continue
+            close = prices["close"].to_numpy(dtype=float)
+            high = prices["high"].to_numpy(dtype=float)
+            low = prices["low"].to_numpy(dtype=float)
+            if (close <= 0).any() or (high <= 0).any() or (low <= 0).any():
+                skipped["invalid_ohlc"].append(f"{tkr}(non_positive_price)")
+                continue
+            if (high < low).any() or (high < close).any() or (low > close).any():
+                skipped["invalid_ohlc"].append(f"{tkr}(inconsistent_high_low_close)")
+                continue
+
+            row = {"Ticker": tkr, "Full_Name": nm}
+            periods = [("Week", 5), ("Month", 20), ("Year", 250)]
             for p_name, days in periods:
-                if len(close) <= days: continue
-                prev_c = close[-(days+1)]
-                if prev_c <= 0: continue
-                row[f'{p_name}_High'] = (max(high[-days:]) - prev_c) / prev_c * 100
-                row[f'{p_name}_Close'] = (close[-1] - prev_c) / prev_c * 100
-                row[f'{p_name}_Low'] = (min(low[-days:]) - prev_c) / prev_c * 100
+                if len(close) <= days:
+                    continue
+                prev_c = close[-(days + 1)]
+                if prev_c <= 0:
+                    continue
+                row[f"{p_name}_High"] = (max(high[-days:]) - prev_c) / prev_c * 100
+                row[f"{p_name}_Close"] = (close[-1] - prev_c) / prev_c * 100
+                row[f"{p_name}_Low"] = (min(low[-days:]) - prev_c) / prev_c * 100
             results.append(row)
-        except: continue
+        except Exception as exc:
+            skipped["read_or_parse_error"].append(f"{tkr}({type(exc).__name__})")
+
+    skipped_total = sum(len(items) for items in skipped.values())
+    print(f"🧪 資料品質摘要：候選 {len(all_files)} 檔；有效 {len(results)} 檔；排除 {skipped_total} 檔")
+    for reason, items in skipped.items():
+        if items:
+            print(f"  - {reason}: {len(items)} 檔；代號/原因：{', '.join(items[:30])}")
 
     df_res = pd.DataFrame(results)
     if df_res.empty: return [], df_res, {}
