@@ -85,19 +85,6 @@ class StockNotifier:
         tg_summary = build_taiwan_summary(report_df, stats) if "台灣" in market_name else (
             f"📊 <b>{market_name} 監控分析已完成</b>\n有效分析樣本：{len(report_df)} 檔"
         )
-        if not self.report_receiver_email:
-            print("ℹ️ 未設定 REPORT_RECEIVER_EMAIL，依設定略過 Email 通知。")
-            tg_sent = self.send_telegram(tg_summary)
-            if not self.tg_token or not self.tg_chat_id:
-                print("ℹ️ Telegram 憑證未完整設定，依設定略過 Telegram 通知。")
-            elif not tg_sent:
-                print("⚠️ Telegram 通知未成功送出。")
-            return True
-
-        if not self.resend_api_key:
-            print("⚠️ 缺少 Resend API Key，無法寄信。")
-            return False
-
         report_time = self.get_now_time_str()
         
         # --- 1. 處理下載統計數據 (防止 0 或 None 導致報表崩潰) ---
@@ -233,24 +220,59 @@ class StockNotifier:
             except Exception as e:
                 print(f"⚠️ 處理圖表附件失敗 {img['id']}: {e}")
 
-        # --- 6. 寄送 Resend 郵件 ---
-        try:
-            resend.Emails.send({
-                "from": "StockMonitor <onboarding@resend.dev>",
-                "to": self.report_receiver_email,
-                "subject": f"🚀 {market_name} 全方位監控報告 - {report_time.split(' ')[0]}",
-                "html": html_content,
-                "attachments": attachments
-            })
-            print(f"✅ {market_name} 郵件報告已寄送！")
-            
-            # --- 7. 發送 Telegram 收盤研究摘要 ---
-            tg_msg = tg_summary + f"\n\nEmail 報告已寄送。\n資料可用率：{success_rate}"
-            tg_sent = self.send_telegram(tg_msg)
-            if self.tg_token and self.tg_chat_id and not tg_sent:
-                print("⚠️ Email 已寄送，但 Telegram 摘要通知失敗。")
-            
-            return True
-        except Exception as e:
-            print(f"❌ 寄送失敗: {e}")
+        # --- 6. Email 與 Telegram 分離發送；單一通道失敗不得阻斷另一通道 ---
+        email_configured = bool(self.resend_api_key and self.report_receiver_email)
+        telegram_configured = bool(self.tg_token and self.tg_chat_id)
+        email_sent = False
+        telegram_sent = False
+
+        if email_configured:
+            try:
+                resend.Emails.send({
+                    "from": "StockMonitor <onboarding@resend.dev>",
+                    "to": self.report_receiver_email,
+                    "subject": f"🚀 {market_name} 全方位監控報告 - {report_time.split(' ')[0]}",
+                    "html": html_content,
+                    "attachments": attachments
+                })
+                email_sent = True
+                print(f"NOTIFY_EMAIL_SUCCESS market={market_name}")
+            except Exception as exc:
+                print(f"NOTIFY_EMAIL_FAILED market={market_name} error={type(exc).__name__}: {exc}")
+        else:
+            missing = []
+            if not self.resend_api_key:
+                missing.append("RESEND_API_KEY")
+            if not self.report_receiver_email:
+                missing.append("REPORT_RECEIVER_EMAIL")
+            print("NOTIFY_EMAIL_SKIPPED missing=" + ",".join(missing))
+
+        if telegram_configured:
+            email_status = "已寄送" if email_sent else ("未設定或寄送失敗")
+            tg_msg = tg_summary + (
+                f"\n\nEmail 報告：{email_status}"
+                f"\n資料可用率：{success_rate}"
+            )
+            telegram_sent = self.send_telegram(tg_msg)
+            if telegram_sent:
+                print(f"NOTIFY_TELEGRAM_SUCCESS market={market_name}")
+            else:
+                print(f"NOTIFY_TELEGRAM_FAILED market={market_name}")
+        else:
+            missing = []
+            if not self.tg_token:
+                missing.append("TELEGRAM_BOT_TOKEN")
+            if not self.tg_chat_id:
+                missing.append("TELEGRAM_CHAT_ID")
+            print("NOTIFY_TELEGRAM_SKIPPED missing=" + ",".join(missing))
+
+        configured = email_configured or telegram_configured
+        delivered = email_sent or telegram_sent
+        if not configured:
+            print("NOTIFY_NO_CHANNEL_CONFIGURED")
             return False
+        if not delivered:
+            print("NOTIFY_ALL_CONFIGURED_CHANNELS_FAILED")
+            return False
+        print(f"NOTIFY_RESULT email={email_sent} telegram={telegram_sent}")
+        return True
