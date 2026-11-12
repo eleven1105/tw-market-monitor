@@ -93,6 +93,35 @@ def build_company_list(arr_pct, codes, names, bins, market_id):
 
     return "\n".join(lines)
 
+def validate_recent_ohlc(prices, lookback=251, relative_tolerance=1e-8, absolute_tolerance=1e-8):
+    """Validate OHLC relationships only in the observations used by 5/20/250-day metrics.
+
+    Yahoo adjusted prices can differ by a few floating-point ulps. A scale-aware
+    tolerance avoids rejecting valid bars for representation noise, while
+    material violations (for example close below low) remain invalid.
+    """
+    recent = prices.tail(lookback)
+    if recent.empty:
+        return False, "empty_recent_window"
+
+    values = recent[["close", "high", "low"]].to_numpy(dtype=float)
+    if not np.isfinite(values).all():
+        return False, "non_numeric_or_missing"
+    if (values <= 0).any():
+        return False, "non_positive_price"
+
+    close = recent["close"].to_numpy(dtype=float)
+    high = recent["high"].to_numpy(dtype=float)
+    low = recent["low"].to_numpy(dtype=float)
+    tolerance = np.maximum.reduce([np.abs(close), np.abs(high), np.abs(low)])
+    tolerance = tolerance * relative_tolerance + absolute_tolerance
+    bad = (high + tolerance < low) | (high + tolerance < close) | (low - tolerance > close)
+    if bad.any():
+        idx = int(np.flatnonzero(bad)[0])
+        return False, f"inconsistent_high_low_close; recent_row={idx}; high={high[idx]}; low={low[idx]}; close={close[idx]}"
+    return True, None
+
+
 def run_global_analysis(market_id="tw-share"):
     """
     分析主邏輯：讀取 CSV -> 計算回報率 -> 繪製分布圖 -> 生成文字報表
@@ -162,24 +191,16 @@ def run_global_analysis(market_id="tw-share"):
                 continue
 
             prices = df[["close", "high", "low"]].apply(pd.to_numeric, errors="coerce")
-            if prices.isna().any().any() or not np.isfinite(prices.to_numpy()).all():
-                skipped["invalid_ohlc"].append(f"{tkr}(non_numeric_or_missing)")
+            valid_ohlc, ohlc_reason = validate_recent_ohlc(prices, lookback=251)
+            if not valid_ohlc:
+                skipped["invalid_ohlc"].append(f"{tkr}({ohlc_reason})")
                 continue
+            # Metrics below use at most the latest 251 closes and latest 250
+            # highs/lows. Historical anomalies outside this window cannot
+            # affect the reported periods and must not discard the whole stock.
             close = prices["close"].to_numpy(dtype=float)
             high = prices["high"].to_numpy(dtype=float)
             low = prices["low"].to_numpy(dtype=float)
-            if (close <= 0).any() or (high <= 0).any() or (low <= 0).any():
-                skipped["invalid_ohlc"].append(f"{tkr}(non_positive_price)")
-                continue
-            bad_mask = (high < low) | (high < close) | (low > close)
-            if bad_mask.any():
-                bad_idx = int(np.flatnonzero(bad_mask)[0])
-                date_value = df.iloc[bad_idx].get("date", df.iloc[bad_idx].get("datetime", "unknown"))
-                skipped["invalid_ohlc"].append(
-                    f"{tkr}(inconsistent_high_low_close; date={date_value}; "
-                    f"high={high[bad_idx]}; low={low[bad_idx]}; close={close[bad_idx]})"
-                )
-                continue
 
             row = {"Ticker": tkr, "Full_Name": nm}
             periods = [("Week", 5), ("Month", 20), ("Year", 250)]
