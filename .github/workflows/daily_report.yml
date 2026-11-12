@@ -41,6 +41,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-tw-listed-common-
 
+      - name: Restore FinMind chip cache
+        uses: actions/cache@v4
+        with:
+          path: data/tw-share/chip_cache
+          key: ${{ runner.os }}-tw-chip-cache-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-tw-chip-cache-
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -55,4 +63,15 @@ jobs:
           REPORT_RECEIVER_EMAIL: ${{ secrets.REPORT_RECEIVER_EMAIL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
         run: python main.py --market tw-share
+
+      - name: Upload wave candidate and chip summaries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wave-candidate-chip-report
+          path: |
+            output/wave_candidates.csv
+            output/wave_candidate_chip_status.json
+          if-no-files-found: ignore
