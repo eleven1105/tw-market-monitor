@@ -1,13 +1,24 @@
 # -*- coding: utf-8 -*-
 """Read-only checks against the Taiwan Stock Exchange official monthly daily-bar API."""
-from datetime import date
+from datetime import date, datetime
 import requests
 
 TWSE_STOCK_DAY_URL = "https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY"
 
 
 def _parse_twse_date(value):
-    parts = str(value).strip().replace("-", "/").split("/")
+    raw = str(value).strip()
+    if not raw:
+        return None
+    # Local CSV timestamps may include time and a UTC offset, e.g.
+    # 2026-11-12 00:00:00+08:00. Normalize these before parsing ROC dates.
+    try:
+        iso_value = raw.replace("Z", "+00:00")
+        return datetime.fromisoformat(iso_value).date()
+    except ValueError:
+        pass
+
+    parts = raw.replace("-", "/").split("/")
     if len(parts) != 3:
         return None
     try:
