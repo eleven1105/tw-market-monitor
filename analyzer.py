@@ -158,13 +158,11 @@ def validate_history_dates(frame, expected_latest_date=None, lookback=251):
     if parsed.tail(lookback).isna().any():
         return False, "missing_or_invalid_recent_date", frame
 
-    recent_dates = parsed.tail(lookback)
-    if recent_dates.duplicated().any():
-        return False, "duplicate_recent_trading_date", frame
-
     valid = parsed.notna()
     if not valid.any():
         return False, "no_valid_trading_dates", frame
+    if parsed.loc[valid].duplicated().any():
+        return False, "duplicate_trading_date", frame
 
     latest_date = parsed.loc[valid].max().strftime("%Y-%m-%d")
     if expected_latest_date:
