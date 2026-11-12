@@ -46,6 +46,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-tw.txt
 
+      - name: Validate OHLC quality rules
+        run: python -m unittest discover -s tests -v
+
       - name: Run Taiwan listed common-stock monitor
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
