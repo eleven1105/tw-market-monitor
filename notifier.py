@@ -32,6 +32,39 @@ def build_taiwan_summary(report_df, stats=None, max_candidates=5):
     return "\n".join(lines)
 
 
+def deliver_notification_channels(email_configured, telegram_configured,
+                                  send_email, send_telegram, logger=print):
+    """Attempt configured channels independently; succeed if at least one delivers."""
+    email_sent = False
+    telegram_sent = False
+    if email_configured:
+        try:
+            send_email()
+            email_sent = True
+            logger("NOTIFY_EMAIL_SUCCESS")
+        except Exception as exc:
+            logger(f"NOTIFY_EMAIL_FAILED error={type(exc).__name__}: {exc}")
+    else:
+        logger("NOTIFY_EMAIL_SKIPPED")
+
+    if telegram_configured:
+        try:
+            telegram_sent = bool(send_telegram(email_sent))
+            logger("NOTIFY_TELEGRAM_SUCCESS" if telegram_sent else "NOTIFY_TELEGRAM_FAILED")
+        except Exception as exc:
+            logger(f"NOTIFY_TELEGRAM_FAILED error={type(exc).__name__}: {exc}")
+    else:
+        logger("NOTIFY_TELEGRAM_SKIPPED")
+
+    if not email_configured and not telegram_configured:
+        logger("NOTIFY_NO_CHANNEL_CONFIGURED")
+        return False, email_sent, telegram_sent
+    if not email_sent and not telegram_sent:
+        logger("NOTIFY_ALL_CONFIGURED_CHANNELS_FAILED")
+        return False, email_sent, telegram_sent
+    return True, email_sent, telegram_sent
+
+
 class StockNotifier:
     def __init__(self):
         # 從環境變數讀取金鑰與 ID
@@ -85,19 +118,6 @@ class StockNotifier:
         tg_summary = build_taiwan_summary(report_df, stats) if "台灣" in market_name else (
             f"📊 <b>{market_name} 監控分析已完成</b>\n有效分析樣本：{len(report_df)} 檔"
         )
-        if not self.report_receiver_email:
-            print("ℹ️ 未設定 REPORT_RECEIVER_EMAIL，依設定略過 Email 通知。")
-            tg_sent = self.send_telegram(tg_summary)
-            if not self.tg_token or not self.tg_chat_id:
-                print("ℹ️ Telegram 憑證未完整設定，依設定略過 Telegram 通知。")
-            elif not tg_sent:
-                print("⚠️ Telegram 通知未成功送出。")
-            return True
-
-        if not self.resend_api_key:
-            print("⚠️ 缺少 Resend API Key，無法寄信。")
-            return False
-
         report_time = self.get_now_time_str()
         
         # --- 1. 處理下載統計數據 (防止 0 或 None 導致報表崩潰) ---
@@ -233,24 +253,25 @@ class StockNotifier:
             except Exception as e:
                 print(f"⚠️ 處理圖表附件失敗 {img['id']}: {e}")
 
-        # --- 6. 寄送 Resend 郵件 ---
-        try:
-            resend.Emails.send({
-                "from": "StockMonitor <onboarding@resend.dev>",
-                "to": self.report_receiver_email,
-                "subject": f"🚀 {market_name} 全方位監控報告 - {report_time.split(' ')[0]}",
-                "html": html_content,
-                "attachments": attachments
-            })
-            print(f"✅ {market_name} 郵件報告已寄送！")
-            
-            # --- 7. 發送 Telegram 收盤研究摘要 ---
-            tg_msg = tg_summary + f"\n\nEmail 報告已寄送。\n資料可用率：{success_rate}"
-            tg_sent = self.send_telegram(tg_msg)
-            if self.tg_token and self.tg_chat_id and not tg_sent:
-                print("⚠️ Email 已寄送，但 Telegram 摘要通知失敗。")
-            
-            return True
-        except Exception as e:
-            print(f"❌ 寄送失敗: {e}")
-            return False
+        # --- 6. Email 與 Telegram 分離發送；單一通道失敗不得阻斷另一通道 ---
+        email_configured = bool(self.resend_api_key and self.report_receiver_email)
+        telegram_configured = bool(self.tg_token and self.tg_chat_id)
+        email_payload = {
+            "from": "StockMonitor <onboarding@resend.dev>",
+            "to": self.report_receiver_email,
+            "subject": f"🚀 {market_name} 全方位監控報告 - {report_time.split(' ')[0]}",
+            "html": html_content,
+            "attachments": attachments
+        }
+        success, email_sent, telegram_sent = deliver_notification_channels(
+            email_configured=email_configured,
+            telegram_configured=telegram_configured,
+            send_email=lambda: resend.Emails.send(email_payload),
+            send_telegram=lambda email_sent: self.send_telegram(
+                tg_summary + f"\n\nEmail 報告：{'已寄送' if email_sent else '未設定或寄送失敗'}"
+                f"\n資料可用率：{success_rate}"
+            ),
+            logger=lambda message: print(f"{message} market={market_name}")
+        )
+        print(f"NOTIFY_RESULT email={email_sent} telegram={telegram_sent}")
+        return success
