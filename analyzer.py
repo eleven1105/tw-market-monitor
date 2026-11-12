@@ -109,6 +109,34 @@ def run_global_analysis(market_id="tw-share"):
         print(f"⚠️ 找不到 {market_id} 的 CSV 數據檔案。")
         return [], pd.DataFrame(), {}
 
+    # Taiwan analysis is restricted to this run's successful-download allow-list.
+    # Restored CSV cache files outside the allow-list are excluded.
+    if market_id == "tw-share":
+        manifest_path = Path("./data/tw-share/lists/analysis_universe.csv")
+        if not manifest_path.exists():
+            print("❌ 缺少本次執行的 analysis_universe.csv，拒絕分析舊快取。")
+            return [], pd.DataFrame(), {}
+        try:
+            manifest = pd.read_csv(manifest_path, dtype={"ticker": str})
+            if not {"ticker", "name", "data_date"}.issubset(manifest.columns):
+                raise ValueError("manifest 欄位不完整")
+            dates = manifest["data_date"].dropna().astype(str).unique()
+            today = pd.Timestamp.now().date().isoformat()
+            if len(dates) != 1 or dates[0] != today:
+                raise ValueError(f"manifest 日期非本次執行日期：{dates.tolist()}")
+            allowed = set(manifest["ticker"].dropna().astype(str))
+        except Exception as exc:
+            print(f"❌ 台股白名單驗證失敗，拒絕分析：{exc}")
+            return [], pd.DataFrame(), {}
+        all_files = [
+            path for path in all_files
+            if path.name.split("_", 1)[0] in allowed
+        ]
+        if not all_files:
+            print("❌ 本次白名單沒有可分析的 CSV，拒絕使用舊快取。")
+            return [], pd.DataFrame(), {}
+        print(f"🔒 台股分析白名單：{len(allowed)} 檔；符合 CSV：{len(all_files)} 檔")
+
     results = []
     for f in tqdm(all_files, desc=f"分析 {market_label} 數據"):
         try:
