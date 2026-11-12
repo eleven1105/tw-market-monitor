@@ -128,7 +128,7 @@ def main():
                 valid_rows.append({
                     "ticker": result["ticker"],
                     "name": result["name"],
-                    "latest_data_date": normalized_date,
+                    "data_date": normalized_date,
                 })
             progress.update(1)
         progress.close()
