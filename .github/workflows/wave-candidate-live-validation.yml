@@ -61,4 +61,5 @@ jobs:
           path: |
             output/wave_candidates.csv
             output/wave_candidate_chip_status.json
+            output/wave_candidates_enriched.csv
           if-no-files-found: warn

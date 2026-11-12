@@ -5,7 +5,8 @@ from pathlib import Path
 import pandas as pd
 
 from candidate_chip_pipeline import (
-    score_price_history, fetch_chip_data, DATASETS, normalize_finmind_ticker
+    score_price_history, fetch_chip_data, DATASETS, normalize_finmind_ticker,
+    score_chip_history
 )
 
 
@@ -19,7 +20,7 @@ class CandidateChipPipelineTests(unittest.TestCase):
             "volume": [100000] * 80,
         })
         result = score_price_history(frame)
-        self.assertGreater(result["score"], 50)
+        self.assertGreater(result["technical_score"], 50)
         self.assertIn("avg_turnover_20d", result)
         self.assertGreater(result["return_20d_pct"], 0)
 
@@ -74,6 +75,28 @@ class CandidateChipPipelineTests(unittest.TestCase):
             result = fetch_chip_data(candidates, "fake-token", cache_dir=Path(tmp),
                                      session=NoNetwork(), sleep_seconds=0)
             self.assertEqual([item["status"] for item in result], ["cache", "cache"])
+
+    def test_chip_score_rewards_institutional_accumulation(self):
+        inst = []
+        for day in range(1, 22):
+            inst.append({"date": f"2026-10-{day:02d}", "name": "Foreign_Investor",
+                         "buy": 1000, "sell": 400})
+        margin = []
+        for day in range(1, 22):
+            margin.append({"date": f"2026-10-{day:02d}",
+                           "MarginPurchaseTodayBalance": 10000 + day * 10})
+        result = score_chip_history(inst, margin, "2026-10-21")
+        self.assertEqual(result["chip_data_status"], "available")
+        self.assertEqual(result["institutional_net_5d"], 3000)
+        self.assertEqual(result["institutional_net_20d"], 12000)
+        self.assertEqual(result["institutional_positive_days_5d"], 5)
+        self.assertEqual(result["margin_balance_change_5d"], 50)
+        self.assertGreaterEqual(result["chip_score"], 80)
+
+    def test_chip_score_marks_missing_data_unavailable(self):
+        result = score_chip_history([], [], "2026-11-12")
+        self.assertEqual(result["chip_data_status"], "unavailable")
+        self.assertIsNone(result["chip_score"])
 
 
 if __name__ == "__main__":
