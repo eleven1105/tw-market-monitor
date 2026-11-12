@@ -1,9 +1,7 @@
 name: Taiwan Listed Common Stock Monitor
 
+# Scheduled execution paused by maintainer. Manual dispatch remains available.
 on:
-  schedule:
-    # 10:30 UTC = 18:30 Taiwan time, weekdays
-    - cron: '30 10 * * 1-5'
   workflow_dispatch:
 
 permissions:
