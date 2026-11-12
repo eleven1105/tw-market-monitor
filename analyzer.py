@@ -328,18 +328,30 @@ def run_global_analysis(market_id="tw-share"):
                                     None,
                                 )
                                 if official_bar:
-                                    # Copy before any DataFrame mutation so the audit log
-                                    # preserves the true vendor value being replaced.
+                                    # Copy before mutation so audit logs retain vendor values.
                                     local_values = prices.iloc[source_index].copy()
-                                    official_low = reconcile_official_low(
-                                        local_values["high"],
-                                        local_values["low"],
-                                        local_values["close"],
-                                        official_bar,
+                                    official_values = {
+                                        column: pd.to_numeric(official_bar.get(column), errors="coerce")
+                                        for column in ("open", "high", "low", "close")
+                                    }
+                                    vendor_ohlc = {
+                                        column: pd.to_numeric(
+                                            df.iloc[source_index].get(column), errors="coerce"
+                                        )
+                                        for column in ("open", "high", "low", "close")
+                                    }
+                                    # A complete official bar may replace a completely missing
+                                    # vendor bar, but never mix individual raw/adjusted fields.
+                                    vendor_bar_missing = all(pd.isna(value) for value in vendor_ohlc.values())
+                                    official_bar_valid = (
+                                        all(pd.notna(value) and value > 0 for value in official_values.values())
+                                        and official_values["low"] <= min(official_values["open"], official_values["close"])
+                                        and official_values["high"] >= max(official_values["open"], official_values["close"])
                                     )
-                                    if official_low is not None:
-                                        df.iloc[source_index, df.columns.get_loc("low")] = official_low
-                                        prices.iloc[source_index, prices.columns.get_loc("low")] = official_low
+                                    if vendor_bar_missing and official_bar_valid:
+                                        for column, value in official_values.items():
+                                            df.iloc[source_index, df.columns.get_loc(column)] = float(value)
+                                            prices.iloc[source_index, prices.columns.get_loc(column)] = float(value)
                                         df.to_csv(f, index=False, encoding="utf-8-sig")
                                         valid_ohlc, ohlc_reason = validate_recent_ohlc(
                                             prices, lookback=251, dates=history_dates
@@ -347,11 +359,33 @@ def run_global_analysis(market_id="tw-share"):
                                         if valid_ohlc:
                                             corrected = True
                                             print(
-                                                f"🛠️ TWSE 官方核實修正 {tkr} {parsed_date.strftime('%Y-%m-%d')} "
-                                                f"low：{float(local_values['low']):.10f} -> {float(official_low):.10f} "
-                                                f"(delta={float(official_low) - float(local_values['low']):.10f})；"
-                                                "high/close 已與官方資料核對一致"
+                                                f"🛠️ TWSE 官方完整 OHLC 補正 {tkr} "
+                                                f"{parsed_date.strftime('%Y-%m-%d')}："
+                                                f"open/high/low/close={official_values}；"
+                                                "四個欄位均缺值，整根採用同日期官方原始 K 棒，未混用來源"
                                             )
+                                    elif not vendor_bar_missing:
+                                        official_low = reconcile_official_low(
+                                            local_values["high"],
+                                            local_values["low"],
+                                            local_values["close"],
+                                            official_bar,
+                                        )
+                                        if official_low is not None:
+                                            df.iloc[source_index, df.columns.get_loc("low")] = official_low
+                                            prices.iloc[source_index, prices.columns.get_loc("low")] = official_low
+                                            df.to_csv(f, index=False, encoding="utf-8-sig")
+                                            valid_ohlc, ohlc_reason = validate_recent_ohlc(
+                                                prices, lookback=251, dates=history_dates
+                                            )
+                                            if valid_ohlc:
+                                                corrected = True
+                                                print(
+                                                    f"🛠️ TWSE 官方核實修正 {tkr} {parsed_date.strftime('%Y-%m-%d')} "
+                                                    f"low：{float(local_values['low']):.10f} -> {float(official_low):.10f} "
+                                                    f"(delta={float(official_low) - float(local_values['low']):.10f})；"
+                                                    "high/close 已與官方資料核對一致"
+                                                )
                             except Exception as exc:
                                 print(f"⚠️ {tkr} 官方 OHLC 核實暫不可用：{type(exc).__name__}: {exc}")
 
