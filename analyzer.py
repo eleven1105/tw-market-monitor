@@ -342,7 +342,10 @@ def run_global_analysis(market_id="tw-share"):
                                     }
                                     # A complete official bar may replace a completely missing
                                     # vendor bar, but never mix individual raw/adjusted fields.
-                                    vendor_bar_missing = all(pd.isna(value) for value in vendor_ohlc.values())
+                                    vendor_bar_missing = (
+                                        "open" in df.columns
+                                        and all(pd.isna(value) for value in vendor_ohlc.values())
+                                    )
                                     official_bar_valid = (
                                         all(pd.notna(value) and value > 0 for value in official_values.values())
                                         and official_values["low"] <= min(official_values["open"], official_values["close"])
