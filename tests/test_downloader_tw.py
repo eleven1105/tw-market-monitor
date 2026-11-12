@@ -1,6 +1,6 @@
 import unittest
 
-from downloader_tw import select_lagging_rows
+from downloader_tw import latest_observed_date, select_lagging_rows
 
 
 class SelectLaggingRowsTests(unittest.TestCase):
@@ -20,7 +20,15 @@ class SelectLaggingRowsTests(unittest.TestCase):
             {"ticker": "1111.TW", "data_date": ""},
             {"ticker": "2222.TW", "data_date": None},
         ]
+        self.assertIsNone(latest_observed_date(rows))
         self.assertEqual(select_lagging_rows(rows), [])
+
+    def test_latest_observed_date_is_available_for_refresh_log(self):
+        rows = [
+            {"ticker": "1111.TW", "data_date": "2026-11-12"},
+            {"ticker": "2222.TW", "data_date": "2026-11-11"},
+        ]
+        self.assertEqual(latest_observed_date(rows), "2026-11-12")
 
 
 if __name__ == "__main__":
