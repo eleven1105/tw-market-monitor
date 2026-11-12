@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
 """One-off read-only audit of the exact Taiwan market-data anomalies from Run #19."""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from twse_audit import audit_twse_symbols
 
 EXPECTED_DATE = "2026-11-12"
