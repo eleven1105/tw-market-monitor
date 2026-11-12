@@ -273,7 +273,32 @@ def run_global_analysis(market_id="tw-share"):
             prices = df[["close", "high", "low"]].apply(pd.to_numeric, errors="coerce")
             valid_ohlc, ohlc_reason = validate_recent_ohlc(prices, lookback=251)
             if not valid_ohlc:
-                skipped["invalid_ohlc"].append(f"{tkr}({ohlc_reason})")
+                # Preserve the raw vendor values for diagnosis. Never silently
+                # clamp or rewrite OHLC prices because that would fabricate market data.
+                recent_row = None
+                marker = "recent_row="
+                if marker in str(ohlc_reason):
+                    try:
+                        recent_row = int(str(ohlc_reason).split(marker, 1)[1].split(";", 1)[0])
+                    except (TypeError, ValueError):
+                        recent_row = None
+                detail = str(ohlc_reason)
+                if recent_row is not None:
+                    recent_start = max(0, len(prices) - 251)
+                    source_index = recent_start + recent_row
+                    if 0 <= source_index < len(prices):
+                        date_col = next(
+                            (column for column in ("date", "datetime") if column in df.columns),
+                            None,
+                        )
+                        date_value = df.iloc[source_index][date_col] if date_col else "unknown"
+                        detail += (
+                            f"; date={date_value}; "
+                            f"close={prices.iloc[source_index]['close']}; "
+                            f"high={prices.iloc[source_index]['high']}; "
+                            f"low={prices.iloc[source_index]['low']}"
+                        )
+                skipped["invalid_ohlc"].append(f"{tkr}({detail})")
                 continue
             # Metrics below use at most the latest 251 closes and latest 250
             # highs/lows. Historical anomalies outside this window cannot
