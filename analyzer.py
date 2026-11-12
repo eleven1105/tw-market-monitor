@@ -118,12 +118,14 @@ def run_global_analysis(market_id="tw-share"):
             return [], pd.DataFrame(), {}
         try:
             manifest = pd.read_csv(manifest_path, dtype={"ticker": str})
-            if not {"ticker", "name", "data_date"}.issubset(manifest.columns):
+            if not {"ticker", "name", "data_date", "manifest_created_at"}.issubset(manifest.columns):
                 raise ValueError("manifest 欄位不完整")
-            dates = manifest["data_date"].dropna().astype(str).unique()
-            today = pd.Timestamp.now().date().isoformat()
-            if len(dates) != 1 or dates[0] != today:
-                raise ValueError(f"manifest 日期非本次執行日期：{dates.tolist()}")
+            created = pd.to_datetime(manifest["manifest_created_at"], errors="coerce").dropna()
+            today = pd.Timestamp.now().date()
+            if created.empty or created.dt.date.nunique() != 1 or created.dt.date.iloc[0] != today:
+                raise ValueError("manifest 建立日期非本次執行日期")
+            if manifest["data_date"].isna().all():
+                raise ValueError("白名單沒有任何有效行情日期")
             allowed = set(manifest["ticker"].dropna().astype(str))
         except Exception as exc:
             print(f"❌ 台股白名單驗證失敗，拒絕分析：{exc}")
