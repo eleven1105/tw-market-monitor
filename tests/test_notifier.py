@@ -48,7 +48,7 @@ class TelegramNotificationTests(unittest.TestCase):
                 stats={"total": 1, "success": 1, "fail": 0},
             )
         )
-        send_telegram.assert_called_once()
+        send_telegram.assert_not_called()
 
 
 if __name__ == "__main__":
