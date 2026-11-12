@@ -263,17 +263,13 @@ class StockNotifier:
             "html": html_content,
             "attachments": attachments
         }
-        tg_msg = tg_summary + (
-            f"\n\nEmail 報告：待確認寄送結果"
-            f"\n資料可用率：{success_rate}"
-        )
         success, email_sent, telegram_sent = deliver_notification_channels(
             email_configured=email_configured,
             telegram_configured=telegram_configured,
             send_email=lambda: resend.Emails.send(email_payload),
             send_telegram=lambda email_sent: self.send_telegram(
-                tg_summary + f"\\n\\nEmail 報告：{'已寄送' if email_sent else '未設定或寄送失敗'}"
-                f"\\n資料可用率：{success_rate}"
+                tg_summary + f"\n\nEmail 報告：{'已寄送' if email_sent else '未設定或寄送失敗'}"
+                f"\n資料可用率：{success_rate}"
             ),
             logger=lambda message: print(f"{message} market={market_name}")
         )
