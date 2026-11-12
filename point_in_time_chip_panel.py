@@ -23,7 +23,7 @@ def _normalize_dates(values):
     # yfinance may emit Asia/Taipei-aware timestamps while FinMind dates are
     # timezone-naive strings. Normalize all three datasets to naive UTC dates
     # after converting their instant, then compare calendar trading dates.
-    return pd.to_datetime(values, errors="coerce", utc=True).dt.tz_convert(None).dt.normalize()
+    return pd.to_datetime(values, errors="coerce", utc=True).dt.tz_convert("Asia/Taipei").dt.tz_localize(None).dt.normalize()
 
 
 def _load_json_rows(path):
