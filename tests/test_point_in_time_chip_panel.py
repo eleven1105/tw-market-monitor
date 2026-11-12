@@ -47,6 +47,35 @@ class PointInTimePanelTests(unittest.TestCase):
             self.assertEqual(len(panel), 3)
             self.assertTrue(panel["institutional_net_5d"].isna().all())
 
+    def test_missing_chip_session_does_not_shorten_rolling_window(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); prices = root / "prices"; chips = root / "chips"
+            prices.mkdir(); chips.mkdir()
+            dates = pd.date_range("2026-01-01", periods=10, freq="B", tz="Asia/Taipei")
+            pd.DataFrame({"Date": dates, "Close": list(range(100, 110))}).to_csv(
+                prices / "2330_test.csv", index=False
+            )
+            inst = []
+            margin = []
+            for i, d in enumerate(dates):
+                if i == 6:
+                    continue  # Simulate a missing institutional/margin trading date.
+                for label in ("Foreign_Investor", "Investment_Trust", "Dealer_self"):
+                    inst.append({"date": d.date().isoformat(), "stock_id": "2330",
+                                 "name": label, "buy": 100, "sell": 50})
+                margin.append({"date": d.date().isoformat(), "stock_id": "2330",
+                               "MarginPurchaseTodayBalance": 1000 + i})
+            (chips / f"{INSTITUTIONAL}_2330.TW.json").write_text(
+                json.dumps({"data": inst}), encoding="utf-8")
+            (chips / f"{MARGIN}_2330.TW.json").write_text(
+                json.dumps({"data": margin}), encoding="utf-8")
+            panel = build_symbol_panel("2330.TW", "test", prices, chips)
+            # At session 8, the five-session window includes missing session 7.
+            self.assertTrue(pd.isna(panel.loc[7, "institutional_net_5d"]))
+            self.assertTrue(pd.isna(panel.loc[7, "margin_balance_change_5d"]))
+            # Once five consecutive observed sessions are available again, value returns.
+            self.assertTrue(pd.notna(panel.loc[9, "institutional_net_5d"]))
+
 
 if __name__ == "__main__":
     unittest.main()
