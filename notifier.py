@@ -32,6 +32,17 @@ def build_taiwan_summary(report_df, stats=None, max_candidates=5):
     return "\n".join(lines)
 
 
+
+def notification_config_status(env=None):
+    """Report credential presence only; never expose secret values."""
+    env = os.environ if env is None else env
+    return {
+        'email_api_key_present': bool(env.get('RESEND_API_KEY')),
+        'email_recipient_present': bool(env.get('REPORT_RECEIVER_EMAIL')),
+        'telegram_token_present': bool(env.get('TELEGRAM_BOT_TOKEN')),
+        'telegram_chat_id_present': bool(env.get('TELEGRAM_CHAT_ID')),
+    }
+
 def deliver_notification_channels(email_configured, telegram_configured,
                                   send_email, send_telegram, logger=print):
     """Attempt configured channels independently; succeed if at least one delivers."""
@@ -256,6 +267,8 @@ class StockNotifier:
         # --- 6. Email 與 Telegram 分離發送；單一通道失敗不得阻斷另一通道 ---
         email_configured = bool(self.resend_api_key and self.report_receiver_email)
         telegram_configured = bool(self.tg_token and self.tg_chat_id)
+        config_status = notification_config_status()
+        print("NOTIFY_CONFIG " + " ".join(f"{key}={value}" for key, value in config_status.items()))
         email_payload = {
             "from": "StockMonitor <onboarding@resend.dev>",
             "to": self.report_receiver_email,
