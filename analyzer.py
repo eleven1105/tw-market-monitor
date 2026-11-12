@@ -2,13 +2,13 @@
 import os
 import numpy as np
 import pandas as pd
+import matplotlib
+
+# Select a headless backend before importing pyplot (GitHub Actions safe).
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from pathlib import Path
 from tqdm import tqdm
-import matplotlib
-
-# 強制使用 Agg 後端以確保在 GitHub Actions 等無界面環境穩定執行
-matplotlib.use('Agg')
 
 # 字體設定 (支援中日韓字元，確保簡繁中、日、韓文顯示正常)
 plt.rcParams['font.sans-serif'] = ['Noto Sans CJK TC', 'Noto Sans CJK JP', 'Noto Sans CJK KR', 'Microsoft JhengHei', 'Arial Unicode MS', 'sans-serif']
@@ -305,6 +305,17 @@ def run_global_analysis(market_id="tw-share"):
 
     df_res = pd.DataFrame(results)
     if df_res.empty: return [], df_res, {}
+
+    # Report the usable cross-sectional coverage of each rolling return period.
+    candidate_count = len(all_files)
+    for period, days in (("Week", 5), ("Month", 20), ("Year", 250)):
+        column = f"{period}_Close"
+        available = int(df_res[column].notna().sum()) if column in df_res else 0
+        coverage = available / candidate_count * 100 if candidate_count else 0.0
+        print(
+            f"📈 {days} 交易日資料覆蓋：{available}/{candidate_count} "
+            f"({coverage:.1f}%)"
+        )
 
     # --- 繪圖邏輯 ---
     images = []
