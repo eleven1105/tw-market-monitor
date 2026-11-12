@@ -257,7 +257,7 @@ def score_chip_history(institutional_rows, margin_rows, target_date):
     inst20_points = 30 if net20 > 0 else (15 if net20 == 0 else 0)
     consistency_points = 15 * positive_days / max(1, len(last5))
     margin_points = 5 if change5 is not None and change5 > 0 else 10
-    chip_score = inst5_points + inst20_points + consistency_points + alignment_points + margin_points
+    chip_score = min(100.0, inst5_points + inst20_points + consistency_points + alignment_points + margin_points)
 
     result.update({
         "chip_score": round(chip_score, 2),

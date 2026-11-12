@@ -95,6 +95,7 @@ class CandidateChipPipelineTests(unittest.TestCase):
         self.assertEqual(result["institutional_alignment_5d"], "1/1")
         self.assertEqual(result["margin_balance_change_5d"], 50)
         self.assertGreaterEqual(result["chip_score"], 80)
+        self.assertLessEqual(result["chip_score"], 100)
 
     def test_chip_score_marks_missing_data_unavailable(self):
         result = score_chip_history([], [], "2026-11-12")
