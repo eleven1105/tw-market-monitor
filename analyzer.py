@@ -367,9 +367,10 @@ def run_global_analysis(market_id="tw-share"):
                             date_value = df.iloc[source_index][date_col] if date_col else "unknown"
                             detail += (
                                 f"; date={date_value}; "
-                                f"close={prices.iloc[source_index]['close']}; "
+                                f"open={pd.to_numeric(df.iloc[source_index].get('open'), errors='coerce')}; "
                                 f"high={prices.iloc[source_index]['high']}; "
-                                f"low={prices.iloc[source_index]['low']}"
+                                f"low={prices.iloc[source_index]['low']}; "
+                                f"close={prices.iloc[source_index]['close']}"
                             )
                     skipped["invalid_ohlc"].append(f"{tkr}({detail})")
                     continue
@@ -412,7 +413,7 @@ def run_global_analysis(market_id="tw-share"):
             if pd.notna(parsed_date):
                 target_bars[ticker] = {
                     "date": parsed_date.strftime("%Y-%m-%d"),
-                    "open": None,
+                    "open": pd.to_numeric(fields.get("open"), errors="coerce"),
                     "high": pd.to_numeric(fields.get("high"), errors="coerce"),
                     "low": pd.to_numeric(fields.get("low"), errors="coerce"),
                     "close": pd.to_numeric(fields.get("close"), errors="coerce"),
