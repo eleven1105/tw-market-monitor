@@ -76,19 +76,24 @@ class StockNotifier:
 
         # 應收標的：優先從 stats 拿，拿不到就看 report_df
         total_count = stats.get('total', len(report_df))
-        # 成功家數
+        # 可用資料數（包含快取）；另行計算符合共同最新交易日的筆數
         success_count = stats.get('success', len(report_df))
-        
-        # 計算有效資料覆蓋率（含快取） (百分比)
+        current_date_count = stats.get('current_date', success_count)
+        stale_date_count = stats.get('stale_date', max(0, int(success_count) - int(current_date_count)))
+
         try:
             total_val = int(total_count)
             success_val = int(success_count)
+            current_val = int(current_date_count)
             if total_val > 0:
                 success_rate = f"{(success_val / total_val) * 100:.1f}%"
+                current_date_rate = f"{(current_val / total_val) * 100:.1f}%"
             else:
-                success_rate = "0.0% (清單獲取異常)"
-        except:
+                success_rate = "0.0%"
+                current_date_rate = "0.0%"
+        except (TypeError, ValueError):
             success_rate = "N/A"
+            current_date_rate = "N/A"
 
         # --- 💡 智慧匹配平台跳轉連結 ---
         m_id = market_name.lower()
@@ -119,12 +124,12 @@ class StockNotifier:
                         <div style="font-size: 18px; font-weight: bold;">{total_count}</div>
                     </div>
                     <div style="flex: 1; border-left: 1px solid #eee; border-right: 1px solid #eee;">
-                        <div style="font-size: 12px; color: #888;">更新成功(含快取)</div>
+                        <div style="font-size: 12px; color: #888;">資料可用(含快取)</div>
                         <div style="font-size: 18px; font-weight: bold; color: #28a745;">{success_count}</div>
                     </div>
                     <div style="flex: 1;">
-                        <div style="font-size: 12px; color: #888;">今日覆蓋率</div>
-                        <div style="font-size: 18px; font-weight: bold; color: #1a73e8;">{success_rate}</div>
+                        <div style="font-size: 12px; color: #888;">符合最新行情日</div>
+                        <div style="font-size: 18px; font-weight: bold; color: #1a73e8;">{current_date_count}/{total_count} ({current_date_rate})</div>
                     </div>
                 </div>
 
