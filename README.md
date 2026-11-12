@@ -176,3 +176,22 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 
 
+
+
+---
+
+## Taiwan Listed Common-Stock Monitor (Fork Development)
+
+This fork's `research/tw-listed-common-stocks` branch narrows the automated workflow to TWSE-listed ordinary shares only. The Taiwan universe is sourced from the TWSE ISIN classification page and filtered by market, security type, and CFI code (`ESVUFR`). OTC securities, ETFs, warrants, and other instruments are not used as fallback inputs.
+
+The Taiwan analyzer consumes only `data/tw-share/lists/analysis_universe.csv`, which is generated during the current run from tickers whose history download succeeded or whose cache file was verified as updated on the current run date. A missing, stale, or invalid manifest causes the Taiwan analysis to stop rather than reuse an old CSV universe.
+
+### GitHub Actions secrets
+
+Configure these repository secrets under **Settings → Secrets and variables → Actions** before enabling notifications:
+
+- `RESEND_API_KEY` — Resend API key.
+- `REPORT_RECEIVER_EMAIL` — the intended report recipient. The original author's email is no longer hard-coded.
+- `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` — optional Telegram notification credentials.
+
+If `REPORT_RECEIVER_EMAIL` is absent, email delivery is intentionally skipped. Market-data collection and analysis must be validated separately; a successful workflow run alone does not establish data quality or strategy performance.
