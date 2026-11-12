@@ -1,7 +1,7 @@
-"""Rank a small technical shortlist, then enrich it with cached FinMind chip data.
+"""Rank a technical shortlist and enrich it with recent FinMind chip-flow data.
 
-This is a candidate-research aid, not a trading signal. Missing chip data never
-blocks the primary Taiwan price-analysis/reporting pipeline.
+Scores are transparent research heuristics, not probabilities or trading signals.
+Missing chip data remains explicitly unavailable and never blocks price reporting.
 """
 import json
 import os
@@ -19,16 +19,14 @@ UNIVERSE_FILE = ROOT / "data" / "tw-share" / "lists" / "analysis_universe.csv"
 CACHE_DIR = ROOT / "data" / "tw-share" / "chip_cache"
 OUTPUT_DIR = ROOT / "output"
 API_URL = "https://api.finmindtrade.com/api/v4/data"
-DATASETS = (
-    "TaiwanStockInstitutionalInvestorsBuySell",
-    "TaiwanStockMarginPurchaseShortSale",
-)
+INSTITUTIONAL = "TaiwanStockInstitutionalInvestorsBuySell"
+MARGIN = "TaiwanStockMarginPurchaseShortSale"
+DATASETS = (INSTITUTIONAL, MARGIN)
 MAX_CANDIDATES = 30
 LOOKBACK_CALENDAR_DAYS = 180
 
 
 def normalize_finmind_ticker(ticker):
-    """Convert Yahoo-style symbols (e.g. 2330.TW) to FinMind stock IDs."""
     value = str(ticker).strip().upper()
     if value.endswith(".TW") or value.endswith(".TWO"):
         value = value.rsplit(".", 1)[0]
@@ -38,7 +36,6 @@ def normalize_finmind_ticker(ticker):
 
 
 def score_price_history(frame):
-    """Return a transparent momentum/volume/liquidity score and diagnostics."""
     df = frame.copy()
     df.columns = [str(c).lower() for c in df.columns]
     required = {"close", "high", "low", "volume"}
@@ -51,21 +48,17 @@ def score_price_history(frame):
     if len(df) < 60:
         raise ValueError("insufficient history; need 60 valid rows")
 
-    close = df["close"]
-    volume = df["volume"]
+    close, volume = df["close"], df["volume"]
     last = float(close.iloc[-1])
-    ma20 = float(close.tail(20).mean())
-    ma60 = float(close.tail(60).mean())
+    ma20, ma60 = float(close.tail(20).mean()), float(close.tail(60).mean())
     ret20 = (last / float(close.iloc[-21]) - 1) * 100
     ret60 = (last / float(close.iloc[-61]) - 1) * 100
     high20 = float(df["high"].tail(20).max())
     high_distance = (last / high20 - 1) * 100 if high20 else 0.0
-    vol5 = float(volume.tail(5).mean())
-    vol20 = float(volume.tail(20).mean())
+    vol5, vol20 = float(volume.tail(5).mean()), float(volume.tail(20).mean())
     volume_ratio = vol5 / vol20 if vol20 > 0 else 0.0
     turnover20 = float((close.tail(20) * volume.tail(20)).mean())
 
-    # Transparent rule-based score, not a fitted model or claimed win rate.
     score = 0.0
     score += 25 if last > ma20 else 0
     score += 20 if ma20 > ma60 else 0
@@ -73,23 +66,30 @@ def score_price_history(frame):
     score += max(0.0, min(15.0, ret60 / 2))
     score += 10 if high_distance >= -5 else (5 if high_distance >= -10 else 0)
     score += 10 if volume_ratio >= 1.2 else (5 if volume_ratio >= 0.8 else 0)
+    # Penalize chasing: strong recent extension and stretched distance from MA20.
+    chase_penalty = min(15.0, max(0.0, ret20 - 20.0) * 0.5)
+    ma20_extension = (last / ma20 - 1) * 100 if ma20 else 0.0
+    chase_penalty += min(10.0, max(0.0, ma20_extension - 12.0) * 0.5)
+    score = max(0.0, score - chase_penalty)
     return {
-        "score": round(score, 2),
+        "technical_score": round(score, 2),
         "close": round(last, 4),
         "return_20d_pct": round(ret20, 2),
         "return_60d_pct": round(ret60, 2),
         "ma20": round(ma20, 4),
         "ma60": round(ma60, 4),
+        "ma20_extension_pct": round(ma20_extension, 2),
         "distance_from_20d_high_pct": round(high_distance, 2),
         "volume_ratio_5d_20d": round(volume_ratio, 2),
         "avg_turnover_20d": round(turnover20, 0),
+        "chase_penalty": round(chase_penalty, 2),
     }
 
 
 def build_candidate_list(price_dir=PRICE_DIR, universe_file=UNIVERSE_FILE, limit=MAX_CANDIDATES):
     universe = pd.read_csv(universe_file, dtype={"ticker": str})
     names = dict(zip(universe["ticker"].astype(str), universe["name"].astype(str)))
-    manifest = pd.read_csv(UNIVERSE_FILE, dtype={"ticker": str})
+    manifest = pd.read_csv(universe_file, dtype={"ticker": str})
     latest = pd.to_datetime(manifest["data_date"], errors="coerce").max()
     if pd.isna(latest):
         raise ValueError("analysis universe has no valid market date")
@@ -102,15 +102,14 @@ def build_candidate_list(price_dir=PRICE_DIR, universe_file=UNIVERSE_FILE, limit
         if ticker not in fresh_tickers:
             continue
         try:
-            frame = pd.read_csv(path)
-            metrics = score_price_history(frame)
+            metrics = score_price_history(pd.read_csv(path))
             if metrics["avg_turnover_20d"] < 10_000_000:
                 continue
             rows.append({"ticker": ticker, "name": names.get(ticker, ticker),
                          "market_date": latest_date, **metrics})
         except Exception as exc:
             print(f"SHORTLIST_SKIP {ticker}: {type(exc).__name__}: {exc}")
-    rows.sort(key=lambda item: (item["score"], item["avg_turnover_20d"]), reverse=True)
+    rows.sort(key=lambda item: (item["technical_score"], item["avg_turnover_20d"]), reverse=True)
     return rows[:limit]
 
 
@@ -123,7 +122,6 @@ def _read_cache(path):
 
 
 def fetch_chip_data(candidates, token, cache_dir=CACHE_DIR, session=None, sleep_seconds=0.25):
-    """Fetch at most 2 datasets per candidate; reuse cache through latest market date."""
     cache_dir.mkdir(parents=True, exist_ok=True)
     session = session or requests.Session()
     session.headers.update({"Authorization": f"Bearer {token}"})
@@ -154,9 +152,8 @@ def fetch_chip_data(candidates, token, cache_dir=CACHE_DIR, session=None, sleep_
                 rows = payload.get("data", [])
                 if rows:
                     columns = set(rows[0])
-                    required = {"date", "stock_id"}
-                    if not required.issubset(columns):
-                        raise ValueError(f"missing columns: {sorted(required - columns)}")
+                    if not {"date", "stock_id"}.issubset(columns):
+                        raise ValueError(f"missing columns: {sorted({'date', 'stock_id'} - columns)}")
                     with path.open("w", encoding="utf-8") as file:
                         json.dump({"dataset": dataset, "ticker": ticker,
                                    "finmind_stock_id": finmind_id,
@@ -174,27 +171,111 @@ def fetch_chip_data(candidates, token, cache_dir=CACHE_DIR, session=None, sleep_
     return output
 
 
+def _load_dataset_rows(ticker, dataset, cache_dir=CACHE_DIR):
+    cached = _read_cache(Path(cache_dir) / f"{dataset}_{ticker}.json")
+    return cached.get("data", []) if isinstance(cached, dict) else []
+
+
+def score_chip_history(institutional_rows, margin_rows, target_date):
+    """Score recent institutional flows and margin changes using available rows only."""
+    inst = pd.DataFrame(institutional_rows)
+    margin = pd.DataFrame(margin_rows)
+    result = {
+        "chip_score": None, "institutional_net_5d": None,
+        "institutional_net_20d": None, "institutional_positive_days_5d": None,
+        "margin_balance_change_5d": None, "margin_balance_change_20d": None,
+        "chip_data_status": "unavailable",
+    }
+    if inst.empty or margin.empty:
+        return result
+    required_inst = {"date", "buy", "sell", "name"}
+    required_margin = {"date", "MarginPurchaseTodayBalance"}
+    if not required_inst.issubset(inst.columns) or not required_margin.issubset(margin.columns):
+        result["chip_data_status"] = "schema_incomplete"
+        return result
+
+    inst["date"] = pd.to_datetime(inst["date"], errors="coerce")
+    for col in ("buy", "sell"):
+        inst[col] = pd.to_numeric(inst[col], errors="coerce")
+    inst = inst.dropna(subset=["date", "buy", "sell"]).sort_values("date")
+    inst = inst[inst["date"] <= pd.Timestamp(target_date)]
+    if inst.empty:
+        return result
+    inst["net"] = inst["buy"] - inst["sell"]
+    daily = inst.groupby("date")["net"].sum().sort_index()
+    last5, last20 = daily.tail(5), daily.tail(20)
+    net5, net20 = float(last5.sum()), float(last20.sum())
+    positive_days = int((last5 > 0).sum())
+
+    margin["date"] = pd.to_datetime(margin["date"], errors="coerce")
+    margin["MarginPurchaseTodayBalance"] = pd.to_numeric(
+        margin["MarginPurchaseTodayBalance"], errors="coerce")
+    margin = margin.dropna(subset=["date", "MarginPurchaseTodayBalance"])
+    margin = margin[margin["date"] <= pd.Timestamp(target_date)].sort_values("date")
+    if margin.empty:
+        return result
+    margin_daily = margin.groupby("date")["MarginPurchaseTodayBalance"].last().sort_index()
+    change5 = (float(margin_daily.iloc[-1] - margin_daily.iloc[-6])
+               if len(margin_daily) >= 6 else None)
+    change20 = (float(margin_daily.iloc[-1] - margin_daily.iloc[-21])
+                if len(margin_daily) >= 21 else None)
+
+    # Directional score: institutional accumulation is rewarded; rapid margin
+    # expansion modestly reduces the score because it can signal crowded leverage.
+    inst5_points = 35 if net5 > 0 else (17.5 if net5 == 0 else 0)
+    inst20_points = 35 if net20 > 0 else (17.5 if net20 == 0 else 0)
+    consistency_points = 20 * positive_days / max(1, len(last5))
+    margin_points = 10
+    if change5 is not None and change5 > 0:
+        margin_points = 5
+    chip_score = inst5_points + inst20_points + consistency_points + margin_points
+    result.update({
+        "chip_score": round(chip_score, 2),
+        "institutional_net_5d": round(net5, 2),
+        "institutional_net_20d": round(net20, 2),
+        "institutional_positive_days_5d": positive_days,
+        "margin_balance_change_5d": round(change5, 2) if change5 is not None else None,
+        "margin_balance_change_20d": round(change20, 2) if change20 is not None else None,
+        "chip_data_status": "available",
+    })
+    return result
+
+
 def run():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     candidates = build_candidate_list()
+    token = os.getenv("FINMIND_TOKEN", "").strip()
     candidate_path = OUTPUT_DIR / "wave_candidates.csv"
     pd.DataFrame(candidates).to_csv(candidate_path, index=False, encoding="utf-8-sig")
     print(f"WAVE_CANDIDATES count={len(candidates)} path={candidate_path}")
-    token = os.getenv("FINMIND_TOKEN", "").strip()
     if not token:
         print("CHIP_ENRICHMENT_SKIPPED: FINMIND_TOKEN unavailable; price analysis continues")
         return {"candidates": len(candidates), "chip_status": "skipped_no_token"}
+
     chip_results = fetch_chip_data(candidates, token)
-    chip_path = OUTPUT_DIR / "wave_candidate_chip_status.json"
-    with chip_path.open("w", encoding="utf-8") as file:
+    chip_status_path = OUTPUT_DIR / "wave_candidate_chip_status.json"
+    with chip_status_path.open("w", encoding="utf-8") as file:
         json.dump(chip_results, file, ensure_ascii=False, indent=2)
-    fetched = sum(item["status"] == "fetched" for item in chip_results)
-    cached = sum(item["status"] == "cache" for item in chip_results)
-    errors = sum(item["status"] == "error" for item in chip_results)
-    empty = sum(item["status"] == "empty" for item in chip_results)
-    print(f"CHIP_ENRICHMENT candidates={len(candidates)} requests={fetched} cache_hits={cached} empty={empty} errors={errors}")
-    return {"candidates": len(candidates), "chip_requests": fetched,
-            "cache_hits": cached, "chip_empty": empty, "chip_errors": errors}
+
+    enriched = []
+    for candidate in candidates:
+        inst = _load_dataset_rows(candidate["ticker"], INSTITUTIONAL)
+        margin = _load_dataset_rows(candidate["ticker"], MARGIN)
+        chip_metrics = score_chip_history(inst, margin, candidate["market_date"])
+        combined = dict(candidate)
+        combined.update(chip_metrics)
+        combined["combined_research_score"] = round(
+            candidate["technical_score"] * 0.65 +
+            (chip_metrics["chip_score"] if chip_metrics["chip_score"] is not None else 50.0) * 0.35, 2)
+        enriched.append(combined)
+    enriched.sort(key=lambda item: item["combined_research_score"], reverse=True)
+    enriched_path = OUTPUT_DIR / "wave_candidates_enriched.csv"
+    pd.DataFrame(enriched).to_csv(enriched_path, index=False, encoding="utf-8-sig")
+    available = sum(item["chip_data_status"] == "available" for item in enriched)
+    print(f"CHIP_SCORE_SUMMARY available={available} unavailable={len(enriched)-available}")
+    print(f"WAVE_ENRICHED_REPORT path={enriched_path}")
+    return {"candidates": len(candidates), "chip_status_rows": len(chip_results),
+            "chip_available": available, "chip_unavailable": len(enriched)-available}
 
 
 if __name__ == "__main__":
