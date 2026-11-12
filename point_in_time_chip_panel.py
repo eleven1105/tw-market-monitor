@@ -137,8 +137,12 @@ def build_symbol_panel(ticker, name, price_dir=PRICE_DIR, chip_dir=CHIP_DIR):
         margin = margin.groupby("date")["margin_balance"].last().to_frame()
         price = price.merge(margin.reset_index(), on="date", how="left")
         # Difference on the price calendar, not on compressed vendor rows.
-        price["margin_balance_change_5d"] = price["margin_balance"].diff(5)
-        price["margin_balance_change_20d"] = price["margin_balance"].diff(20)
+        price["margin_balance_change_5d"] = price["margin_balance"].diff(5).where(
+            price["margin_balance"].rolling(6, min_periods=6).count() == 6
+        )
+        price["margin_balance_change_20d"] = price["margin_balance"].diff(20).where(
+            price["margin_balance"].rolling(21, min_periods=21).count() == 21
+        )
     else:
         for col in ("margin_balance", "margin_balance_change_5d", "margin_balance_change_20d"):
             price[col] = pd.NA
