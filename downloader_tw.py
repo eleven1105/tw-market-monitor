@@ -47,6 +47,18 @@ def _latest_csv_date(path):
         return None
 
 
+def select_lagging_rows(valid_rows):
+    """Select cached symbols behind the freshest date observed in this batch."""
+    dated_rows = [row for row in valid_rows if row.get("data_date")]
+    if not dated_rows:
+        return []
+    latest_date = max(row["data_date"] for row in dated_rows)
+    return [
+        row for row in dated_rows
+        if row["data_date"] < latest_date
+    ]
+
+
 def download_stock_data(row, force_refresh=False):
     ticker, name = row["ticker"], row["name"]
     safe_name = "".join(
@@ -137,8 +149,7 @@ def main():
     # is small. Once the batch establishes the freshest observed market date,
     # selectively refresh only lagging symbols instead of accepting stale bars.
     if valid_rows:
-        latest_observed = max(row["data_date"] for row in valid_rows if row["data_date"])
-        lagging_rows = [row for row in valid_rows if row["data_date"] and row["data_date"] < latest_observed]
+        lagging_rows = select_lagging_rows(valid_rows)
         if lagging_rows:
             log(
                 f"🔄 發現 {len(lagging_rows)} 檔行情落後最新日期 {latest_observed}，"
