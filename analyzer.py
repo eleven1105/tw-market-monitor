@@ -322,6 +322,13 @@ def run_global_analysis(market_id="tw-share"):
         except Exception as exc:
             skipped["read_or_parse_error"].append(f"{tkr}({type(exc).__name__})")
 
+    if market_id == "tw-share" and skipped["invalid_ohlc"]:
+        from twse_audit import audit_twse_symbols
+
+        invalid_tickers = [item.split("(", 1)[0] for item in skipped["invalid_ohlc"]]
+        print("🔎 使用 TWSE 官方原始日成交資料查核 OHLC 異常標的（僅診斷，不自動改價）")
+        audit_twse_symbols(invalid_tickers, expected_date=latest_manifest_date)
+
     skipped_total = sum(len(items) for items in skipped.values())
     print(f"🧪 資料品質摘要：候選 {len(all_files)} 檔；有效 {len(results)} 檔；排除 {skipped_total} 檔")
     for reason, items in skipped.items():
