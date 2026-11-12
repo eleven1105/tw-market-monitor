@@ -33,10 +33,12 @@ class TelegramNotificationTests(unittest.TestCase):
 
         self.assertFalse(notifier.send_telegram("test"))
 
-    @patch.object(StockNotifier, "send_telegram", return_value=False)
+    @patch.object(StockNotifier, "send_telegram", return_value=True)
     def test_missing_email_recipient_skips_email_without_failing_pipeline(self, send_telegram):
         notifier = StockNotifier()
         notifier.report_receiver_email = None
+        notifier.tg_token = "test-token"
+        notifier.tg_chat_id = "test-chat"
         report = pd.DataFrame({"Ticker": ["2330.TW"]})
 
         self.assertTrue(
@@ -48,7 +50,7 @@ class TelegramNotificationTests(unittest.TestCase):
                 stats={"total": 1, "success": 1, "fail": 0},
             )
         )
-        send_telegram.assert_not_called()
+        send_telegram.assert_called_once()
 
 
 if __name__ == "__main__":
