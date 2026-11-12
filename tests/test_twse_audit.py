@@ -43,6 +43,22 @@ class TwseAuditTests(unittest.TestCase):
         self.assertEqual(get.call_args.kwargs["params"]["stockNo"], "1538")
         self.assertEqual(get.call_args.kwargs["params"]["date"], "20261101")
 
+    def test_reconciles_low_only_when_high_and_close_match_official(self):
+        from twse_audit import reconcile_official_low
+
+        official = {"high": 242.5, "low": 224.0, "close": 224.0}
+        self.assertEqual(
+            reconcile_official_low(242.5, 226.0, 224.0, official),
+            224.0,
+        )
+
+    def test_does_not_reconcile_when_high_or_close_differs(self):
+        from twse_audit import reconcile_official_low
+
+        official = {"high": 242.5, "low": 224.0, "close": 224.0}
+        self.assertIsNone(reconcile_official_low(241.0, 226.0, 224.0, official))
+        self.assertIsNone(reconcile_official_low(242.5, 226.0, 223.0, official))
+
     @patch("twse_audit.fetch_official_month_bars")
     def test_audit_fetches_month_of_exact_flagged_bar(self, fetch_month):
         fetch_month.side_effect = [
