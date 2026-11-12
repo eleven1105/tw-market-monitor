@@ -73,5 +73,6 @@ jobs:
           name: wave-candidate-chip-report
           path: |
             output/wave_candidates.csv
+            output/wave_candidates_enriched.csv
             output/wave_candidate_chip_status.json
           if-no-files-found: ignore
