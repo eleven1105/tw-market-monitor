@@ -49,7 +49,7 @@ def deliver_notification_channels(email_configured, telegram_configured,
 
     if telegram_configured:
         try:
-            telegram_sent = bool(send_telegram())
+            telegram_sent = bool(send_telegram(email_sent))
             logger("NOTIFY_TELEGRAM_SUCCESS" if telegram_sent else "NOTIFY_TELEGRAM_FAILED")
         except Exception as exc:
             logger(f"NOTIFY_TELEGRAM_FAILED error={type(exc).__name__}: {exc}")
@@ -264,15 +264,15 @@ class StockNotifier:
             "attachments": attachments
         }
         tg_msg = tg_summary + (
-            f"\\n\\nEmail 報告：待確認寄送結果"
-            f"\\n資料可用率：{success_rate}"
+            f"\n\nEmail 報告：待確認寄送結果"
+            f"\n資料可用率：{success_rate}"
         )
         success, email_sent, telegram_sent = deliver_notification_channels(
             email_configured=email_configured,
             telegram_configured=telegram_configured,
             send_email=lambda: resend.Emails.send(email_payload),
-            send_telegram=lambda: self.send_telegram(
-                tg_summary + f"\\n\\nEmail 報告：{'已寄送' if False else '未設定或寄送失敗'}"
+            send_telegram=lambda email_sent: self.send_telegram(
+                tg_summary + f"\\n\\nEmail 報告：{'已寄送' if email_sent else '未設定或寄送失敗'}"
                 f"\\n資料可用率：{success_rate}"
             ),
             logger=lambda message: print(f"{message} market={market_name}")
